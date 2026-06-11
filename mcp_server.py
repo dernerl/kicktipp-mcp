@@ -4,6 +4,8 @@ Tools:
 - list_open_matches:    matches not yet tipped and not yet started
 - list_submitted_tips:  already-tipped matches that haven't kicked off (still editable)
 - submit_tips:          submit or overwrite predicted scores
+- list_bonus_questions: bonus questions (e.g. "Wer wird Weltmeister?") still open
+- submit_bonus_tips:    submit or overwrite bonus-question answers
 
 Configure in claude_desktop_config.json (Claude Desktop -> Settings -> Developer):
 
@@ -33,6 +35,7 @@ from kicktipp import (
     LoginFailed,
     TippabgabePage,
     editable_matches,
+    open_bonus_questions,
     tippable_matches,
 )
 
@@ -96,6 +99,24 @@ class TipInput(BaseModel):
     index: int = Field(description="The index from list_open_matches or list_submitted_tips")
     home: int = Field(ge=0, le=20, description="Predicted home team goals")
     away: int = Field(ge=0, le=20, description="Predicted away team goals")
+
+
+class BonusQuestionOut(BaseModel):
+    index: int = Field(description="Pass this back to submit_bonus_tips")
+    question: str = Field(description="e.g. 'Wer wird Weltmeister?'")
+    deadline: str | None = Field(description="ISO-8601 tip deadline, or null if unknown")
+    answers_needed: int = Field(description="How many answers this question requires")
+    options: list[str] = Field(description="Valid answer options")
+    current_answers: list[str] = Field(
+        description="Currently tipped answers (empty if not tipped yet)"
+    )
+
+
+class BonusTipInput(BaseModel):
+    index: int = Field(description="The index from list_bonus_questions")
+    answers: list[str] = Field(
+        description="Chosen options, exactly answers_needed of them, by option text"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -228,6 +249,78 @@ def submit_tips(
     )
     if skipped:
         msg += f"\n\nSkipped (not found / already kicked off): {skipped}"
+    return msg
+
+
+@mcp.tool()
+def list_bonus_questions() -> list[BonusQuestionOut]:
+    """List kicktipp bonus questions whose deadline hasn't passed.
+
+    Bonus questions are things like "Wer wird Weltmeister?" or "Wer gewinnt
+    die Gruppe A?".  Each question needs `answers_needed` answers chosen from
+    `options`.  Pass the `index` to submit_bonus_tips to tip or overwrite.
+    """
+    client = _client()
+    page = client.fetch_bonus_page()
+    if page is None:
+        return []
+
+    out: list[BonusQuestionOut] = []
+    for q in open_bonus_questions(page.questions):
+        out.append(BonusQuestionOut(
+            index=q.index,
+            question=q.question,
+            deadline=q.deadline.isoformat() if q.deadline else None,
+            answers_needed=len(q.selects),
+            options=sorted(q.selects[0].options),
+            current_answers=[s.current for s in q.selects if s.current],
+        ))
+    return out
+
+
+@mcp.tool()
+def submit_bonus_tips(
+    tips: Annotated[list[BonusTipInput], Field(description="Bonus tips, one per question")],
+) -> str:
+    """Submit or overwrite bonus-question answers on kicktipp.
+
+    Each tip needs exactly `answers_needed` answers (option texts) for its
+    question.  Questions not included keep their current answers.  Re-fetches
+    the bonus page before submitting to pick up fresh form state.
+    """
+    if not tips:
+        return "No tips provided."
+
+    client = _client()
+    page = client.fetch_bonus_page()
+    if page is None:
+        return "No bonus questions found in this Tipprunde."
+
+    open_indices = {q.index for q in open_bonus_questions(page.questions)}
+    answers_by_index: dict[int, list[str]] = {}
+    skipped: list[int] = []
+    for t in tips:
+        if t.index in open_indices:
+            answers_by_index[t.index] = t.answers
+        else:
+            skipped.append(t.index)
+
+    if not answers_by_index:
+        return f"Nothing submitted — no open questions matched (skipped: {skipped})."
+
+    try:
+        client.submit_bonus_tips(page, answers_by_index)
+    except ValueError as e:
+        return f"Nothing submitted — {e}"
+
+    by_index = {q.index: q for q in page.questions}
+    summary_lines = [
+        f"  {by_index[idx].question} -> {', '.join(answers)}"
+        for idx, answers in sorted(answers_by_index.items())
+    ]
+    msg = f"Submitted {len(answers_by_index)} bonus tip(s):\n" + "\n".join(summary_lines)
+    if skipped:
+        msg += f"\n\nSkipped (not found / deadline passed): {skipped}"
     return msg
 
 
