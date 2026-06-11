@@ -50,6 +50,30 @@ class TippabgabePage:
     matches: list[Match] = field(default_factory=list)
 
 
+@dataclass
+class BonusSelect:
+    name: str                   # form field name of the <select>
+    options: dict[str, str]     # option text → option value (excludes "not tipped")
+    current: str | None         # currently selected option text, None if not tipped
+
+
+@dataclass
+class BonusQuestion:
+    index: int                  # sequential index on the bonus page
+    question: str               # e.g. "Wer wird Weltmeister?"
+    deadline: datetime | None   # Tipptermin
+    selects: list[BonusSelect]  # one per required answer (e.g. 4 for semifinals)
+    # Hidden fields inside the question row (e.g. tippAbgegeben=true).
+    hidden_fields: dict[str, str] = field(default_factory=dict)
+
+
+@dataclass
+class BonusPage:
+    form_action: str
+    hidden_fields: dict[str, str] = field(default_factory=dict)
+    questions: list[BonusQuestion] = field(default_factory=list)
+
+
 class LoginFailed(Exception):
     pass
 
@@ -132,6 +156,65 @@ class KicktippClient:
 
         pages.sort(key=lambda p: p.spieltag_index)
         return pages
+
+    def fetch_bonus_page(self) -> BonusPage | None:
+        """Fetch the bonus-question page.  Returns None if there are no questions."""
+        url = f"{BASE_URL}/{self.community}/tippabgabe"
+        resp = self.session.get(url, params={"bonus": "true"}, timeout=15)
+        resp.raise_for_status()
+        return parse_bonus_page(resp.text, fallback_action=url)
+
+    def submit_bonus_tips(
+        self,
+        page: BonusPage,
+        answers_by_index: dict[int, list[str]],
+    ) -> requests.Response:
+        """Submit bonus-question answers (option texts, matched per select).
+
+        Questions not in answers_by_index keep their current selection.
+        """
+        data: dict[str, str] = dict(page.hidden_fields)
+
+        # The browser sends every question's fields, so start from current state.
+        for q in page.questions:
+            data.update(q.hidden_fields)
+            for sel in q.selects:
+                current_value = sel.options.get(sel.current) if sel.current else None
+                data[sel.name] = current_value or "-1"
+
+        # Overlay the answers we're actually submitting.
+        by_index = {q.index: q for q in page.questions}
+        for idx, answers in answers_by_index.items():
+            q = by_index.get(idx)
+            if q is None:
+                raise ValueError(f"no bonus question with index {idx}")
+            if len(answers) != len(q.selects):
+                raise ValueError(
+                    f"question {idx} ({q.question!r}) needs {len(q.selects)} "
+                    f"answer(s), got {len(answers)}"
+                )
+            for sel, answer in zip(q.selects, answers):
+                value = sel.options.get(answer)
+                if value is None:  # forgive case/whitespace differences
+                    folded = answer.strip().casefold()
+                    value = next(
+                        (v for t, v in sel.options.items() if t.casefold() == folded),
+                        None,
+                    )
+                if value is None:
+                    raise ValueError(
+                        f"invalid answer {answer!r} for question {idx} "
+                        f"({q.question!r}); valid: {sorted(q.selects[0].options)}"
+                    )
+                data[sel.name] = value
+
+        action = page.form_action
+        if not action.startswith("http"):
+            action = BASE_URL.rstrip("/") + "/" + action.lstrip("/")
+
+        resp = self.session.post(action, data=data, timeout=20)
+        resp.raise_for_status()
+        return resp
 
     def submit_tips(
         self,
@@ -285,6 +368,90 @@ def parse_tippabgabe(html: str, fallback_action: str) -> TippabgabePage | None:
         hidden_fields=hidden_fields,
         matches=matches,
     )
+
+
+def parse_bonus_page(html: str, fallback_action: str) -> BonusPage | None:
+    soup = BeautifulSoup(html, "html.parser")
+
+    table = soup.find("table", id="tippabgabeFragen")
+    if table is None:
+        return None  # no bonus questions in this Tipprunde
+
+    form = _find_enclosing_form(table) or soup.find("form")
+    if form is None:
+        return None
+
+    action = form.get("action") or fallback_action
+    hidden_fields = _collect_form_fields(form, exclude_table=table)
+
+    questions: list[BonusQuestion] = []
+    for row in table.find_all("tr"):
+        select_tags = row.find_all("select")
+        if not select_tags:
+            continue  # header row, or question already locked (rendered as text)
+
+        deadline = _kickoff_from_row(row)
+        question = _extract_question_text(row)
+        if question is None:
+            continue
+
+        selects: list[BonusSelect] = []
+        for tag in select_tags:
+            name = tag.get("name")
+            if not name:
+                continue
+            options: dict[str, str] = {}
+            current: str | None = None
+            for opt in tag.find_all("option"):
+                value = opt.get("value", "")
+                text = opt.get_text(strip=True)
+                if value == "-1":  # the "-- Nicht getippt --" placeholder
+                    continue
+                options[text] = value
+                if opt.has_attr("selected"):
+                    current = text
+            selects.append(BonusSelect(name=name, options=options, current=current))
+        if not selects:
+            continue
+
+        row_hidden: dict[str, str] = {}
+        for inp in row.find_all("input", type="hidden"):
+            n = inp.get("name")
+            if n:
+                row_hidden[n] = inp.get("value") or ""
+
+        questions.append(
+            BonusQuestion(
+                index=len(questions),
+                question=question,
+                deadline=deadline,
+                selects=selects,
+                hidden_fields=row_hidden,
+            )
+        )
+
+    return BonusPage(form_action=action, hidden_fields=hidden_fields, questions=questions)
+
+
+def _extract_question_text(row: Tag) -> str | None:
+    """The question is the td that holds neither the Tipptermin nor the selects."""
+    for td in row.find_all("td"):
+        if td.find("select") is not None:
+            continue
+        text = td.get_text(" ", strip=True)
+        if not text or _DATE_RE.search(text):
+            continue
+        return text
+    return None
+
+
+def open_bonus_questions(questions: Iterable[BonusQuestion]) -> list[BonusQuestion]:
+    """Questions whose deadline hasn't passed (or has no deadline)."""
+    now = datetime.now()
+    return [
+        q for q in questions
+        if q.deadline is None or q.deadline > now
+    ]
 
 
 def _spieltag_label_from_links(html: str, spieltag_index: int) -> str:
