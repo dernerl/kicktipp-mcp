@@ -1,0 +1,7 @@
+{
+  "mcpServers": {
+    "kicktipp": {
+      "command": "/absolute/path/to/kicktipp-ai/run-mcp.sh"
+    }
+  }
+}

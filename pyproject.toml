@@ -1,0 +1,11 @@
+[project]
+name = "kicktipp-ai"
+version = "0.1.0"
+description = "Automated kicktipp bot with random and LLM tipping strategies"
+requires-python = ">=3.10"
+dependencies = [
+    "requests>=2.32",
+    "beautifulsoup4>=4.12",
+    "python-dotenv>=1.0",
+    "mcp>=1.0",
+]

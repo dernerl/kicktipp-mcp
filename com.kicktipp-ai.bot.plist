@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.kicktipp-ai.bot</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>-lc</string>
+        <string>cd /absolute/path/to/kicktipp-ai &amp;&amp; ./run.sh</string>
+    </array>
+
+    <!-- Every 6 hours. World Cup 2026 has multiple matchdays per week;
+         6h catches everything with a comfortable buffer. -->
+    <key>StartInterval</key>
+    <integer>21600</integer>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>StandardOutPath</key>
+    <string>/tmp/kicktipp-ai.log</string>
+    <key>StandardErrorPath</key>
+    <string>/tmp/kicktipp-ai.log</string>
+</dict>
+</plist>

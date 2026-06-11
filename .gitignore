@@ -1,0 +1,26 @@
+# Secrets / local config
+.env
+.env.local
+
+# Claude Code local settings (machine-specific)
+.claude/settings.local.json
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+
+# Virtual environments
+.venv/
+venv/
+.uv/
+
+# Logs and debug artifacts
+*.log
+debug-*.html
+
+# macOS
+.DS_Store
