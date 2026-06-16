@@ -51,6 +51,16 @@ class TippabgabePage:
 
 
 @dataclass
+class RankingEntry:
+    rank: int
+    player: str
+    points: int
+    tendency_points: int | None = None
+    difference_points: int | None = None
+    exact_points: int | None = None
+
+
+@dataclass
 class BonusSelect:
     name: str                   # form field name of the <select>
     options: dict[str, str]     # option text → option value (excludes "not tipped")
@@ -156,6 +166,13 @@ class KicktippClient:
 
         pages.sort(key=lambda p: p.spieltag_index)
         return pages
+
+    def fetch_ranking(self) -> list[RankingEntry]:
+        """Fetch the Gesamtübersicht and return the current standings."""
+        url = f"{BASE_URL}/{self.community}/gesamtuebersicht"
+        resp = self.session.get(url, timeout=15)
+        resp.raise_for_status()
+        return parse_ranking(resp.text)
 
     def fetch_bonus_page(self) -> BonusPage | None:
         """Fetch the bonus-question page.  Returns None if there are no questions."""
@@ -431,6 +448,47 @@ def parse_bonus_page(html: str, fallback_action: str) -> BonusPage | None:
         )
 
     return BonusPage(form_action=action, hidden_fields=hidden_fields, questions=questions)
+
+
+def parse_ranking(html: str) -> list[RankingEntry]:
+    soup = BeautifulSoup(html, "html.parser")
+
+    # Kicktipp uses id="ranking" with class="tippuebersicht ktable"
+    table = (
+        soup.find("table", id="ranking")
+        or soup.find("table", id="rangliste")
+        or soup.find("table", id="gesamtuebersicht")
+    )
+    if table is None:
+        return []
+
+    entries: list[RankingEntry] = []
+    for row in table.find_all("tr"):
+        tds = row.find_all("td")
+        if len(tds) < 3:
+            continue
+
+        # First cell: rank like "1." or "1"
+        rank_text = tds[0].get_text(strip=True).rstrip(".")
+        try:
+            rank = int(rank_text)
+        except ValueError:
+            continue
+
+        # Second cell: player name (may be wrapped in <a>)
+        a = tds[1].find("a")
+        player = a.get_text(strip=True) if a else tds[1].get_text(strip=True)
+
+        # Last cell: total points (Gesamtpunkte)
+        total_text = tds[-1].get_text(strip=True).replace(".", "").replace(",", "")
+        try:
+            points = int(total_text)
+        except ValueError:
+            continue
+
+        entries.append(RankingEntry(rank=rank, player=player, points=points))
+
+    return entries
 
 
 def _extract_question_text(row: Tag) -> str | None:

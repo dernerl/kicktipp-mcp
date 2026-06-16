@@ -33,6 +33,7 @@ from pydantic import BaseModel, Field
 from kicktipp import (
     KicktippClient,
     LoginFailed,
+    RankingEntry,
     TippabgabePage,
     editable_matches,
     open_bonus_questions,
@@ -110,6 +111,15 @@ class BonusQuestionOut(BaseModel):
     current_answers: list[str] = Field(
         description="Currently tipped answers (empty if not tipped yet)"
     )
+
+
+class RankingEntryOut(BaseModel):
+    rank: int
+    player: str
+    points: int
+    tendency_points: int | None = None
+    difference_points: int | None = None
+    exact_points: int | None = None
 
 
 class BonusTipInput(BaseModel):
@@ -250,6 +260,28 @@ def submit_tips(
     if skipped:
         msg += f"\n\nSkipped (not found / already kicked off): {skipped}"
     return msg
+
+
+@mcp.tool()
+def get_ranking() -> list[RankingEntryOut]:
+    """Return the current overall standings (Gesamtübersicht) for this Tipprunde.
+
+    Shows each player's rank, name, and points.  Call this to check your
+    position and see how far ahead or behind the competition you are.
+    """
+    client = _client()
+    entries = client.fetch_ranking()
+    return [
+        RankingEntryOut(
+            rank=e.rank,
+            player=e.player,
+            points=e.points,
+            tendency_points=e.tendency_points,
+            difference_points=e.difference_points,
+            exact_points=e.exact_points,
+        )
+        for e in entries
+    ]
 
 
 @mcp.tool()

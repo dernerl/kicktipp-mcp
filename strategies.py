@@ -45,14 +45,34 @@ def _poisson_sample(lam: float) -> int:
 
 CLAUDE_CLI = os.environ.get("CLAUDE_CLI", "claude")
 
-LLM_PROMPT_TEMPLATE = """You are predicting final scores for these football matches:
+LLM_PROMPT_TEMPLATE = """You are predicting final scores for a Kicktipp competition (German football prediction game).
 
+## Matches to predict
 {match_list}
 
-Use web search to check current form, recent results, lineups, and injuries before predicting. Be realistic about football — most matches end with low scores (1-1, 1-0, 2-1, 0-0, 2-0). Scores above 4 are rare.
+## Scoring system (important for strategy)
+- 3 points: exact score correct
+- 2 points: correct goal difference (but wrong score)
+- 1 point: correct tendency (winner/draw) only
+- 0 points: wrong tendency
 
-Output exactly one line at the very end of your response: a JSON array with one object per match in the same order as above, like:
-[{{"home": 2, "away": 1}}, {{"home": 1, "away": 1}}]
+## Your task
+For each match, search the web for:
+1. Current injury/suspension news for both teams
+2. Recent form (last 3-5 matches)
+3. Likely starting lineup or rotation (group stage context: is a team already through?)
+4. Head-to-head record if relevant
+5. Bookmaker odds (e.g. from oddset.de, bet365, or similar) to gauge the favorite
+
+Then reason about which EXACT score is most likely — not just who wins. Think about:
+- Strong favorites (odds < 1.40): often win 2:0 or 3:0, but is a 2:1 more realistic given their attack/defense stats?
+- Close matches (odds > 1.80 for the favorite): consider 1:1 or 1:0
+- Does the score matter for group advancement? Teams already through may rotate and concede more.
+
+Most Kicktipp players will pick the obvious favorite to win 2:0. You score big by finding the correct exact result when it differs from the crowd.
+
+Output exactly one JSON array as the very last line of your response — one object per match in the same order:
+[{{"home": 2, "away": 1}}, {{"home": 0, "away": 0}}]
 
 The JSON array MUST be the last thing in your response. Do not add anything after it."""
 
