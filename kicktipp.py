@@ -51,6 +51,17 @@ class TippabgabePage:
 
 
 @dataclass
+class PastResult:
+    spieltag_label: str
+    home_team: str
+    away_team: str
+    home_goals: int
+    away_goals: int
+    kickoff: datetime | None = None
+    group: str | None = None
+
+
+@dataclass
 class RankingEntry:
     rank: int
     player: str
@@ -166,6 +177,26 @@ class KicktippClient:
 
         pages.sort(key=lambda p: p.spieltag_index)
         return pages
+
+    def fetch_past_results(self) -> list[PastResult]:
+        """Fetch all completed match results from tippuebersicht pages."""
+        url = f"{BASE_URL}/{self.community}/tippuebersicht"
+        resp = self.session.get(url, timeout=15)
+        resp.raise_for_status()
+
+        links = _parse_spieltag_links(resp.text)
+        all_results: list[PastResult] = []
+
+        for st_idx, label, tsid in links:
+            r = self.session.get(
+                url,
+                params={"spieltagIndex": st_idx, "tippsaisonId": tsid},
+                timeout=15,
+            )
+            r.raise_for_status()
+            all_results.extend(parse_past_results(r.text, spieltag_label=label))
+
+        return all_results
 
     def fetch_ranking(self) -> list[RankingEntry]:
         """Fetch the Gesamtübersicht and return the current standings."""
@@ -309,6 +340,9 @@ def parse_tippabgabe(html: str, fallback_action: str) -> TippabgabePage | None:
             continue
 
         # ── kickoff time ──────────────────────────────────────────────────
+        # Simultaneous kickoffs share one time cell via rowspan, so only the
+        # first match row in such a pair has its own "kicktipp-time" cell —
+        # the next one must inherit it via last_seen_kickoff.
         if tipp_cell is not None:
             time_cell = row.find("td", class_="kicktipp-time")
             kickoff = (
@@ -316,6 +350,8 @@ def parse_tippabgabe(html: str, fallback_action: str) -> TippabgabePage | None:
             ) or last_seen_kickoff
         else:
             kickoff = _kickoff_from_row(row) or last_seen_kickoff
+        if kickoff is not None:
+            last_seen_kickoff = kickoff
 
         # ── score inputs & per-match hidden fields ────────────────────────
         search_node = tipp_cell if tipp_cell is not None else row
@@ -489,6 +525,68 @@ def parse_ranking(html: str) -> list[RankingEntry]:
         entries.append(RankingEntry(rank=rank, player=player, points=points))
 
     return entries
+
+
+def parse_past_results(html: str, spieltag_label: str) -> list[PastResult]:
+    """Parse completed match results from a tippuebersicht page.
+
+    Skips rows where the result is '-:-' (match not yet played).
+    """
+    soup = BeautifulSoup(html, "html.parser")
+    table = soup.find("table", id="spielplanSpiele")
+    if table is None:
+        return []
+
+    results: list[PastResult] = []
+    for row in table.find_all("tr"):
+        tds = row.find_all("td")
+        if len(tds) < 5:
+            continue
+        date_text = tds[0].get_text(strip=True)
+        home_team = tds[1].get_text(strip=True)
+        away_team = tds[2].get_text(strip=True)
+        group = tds[3].get_text(strip=True) or None
+        result_text = tds[4].get_text(strip=True)
+
+        if "-" in result_text or not result_text:
+            continue
+
+        parts = result_text.split(":")
+        if len(parts) != 2:
+            continue
+        try:
+            home_goals = int(parts[0].strip())
+            away_goals = int(parts[1].strip())
+        except ValueError:
+            continue
+
+        kickoff = _kickoff_from_text(date_text)
+
+        results.append(PastResult(
+            spieltag_label=spieltag_label,
+            home_team=home_team,
+            away_team=away_team,
+            home_goals=home_goals,
+            away_goals=away_goals,
+            kickoff=kickoff,
+            group=group,
+        ))
+    return results
+
+
+def _kickoff_from_text(text: str) -> datetime | None:
+    date_match = _DATE_RE.search(text)
+    time_match = _TIME_RE.search(text)
+    if not (date_match and time_match):
+        return None
+    day, month, year = (int(x) for x in date_match.groups())
+    if year < 100:
+        year += 2000
+    hour, minute = int(time_match.group(1)), int(time_match.group(2))
+    try:
+        return datetime(year, month, day, hour, minute)
+    except ValueError:
+        return None
 
 
 def _extract_question_text(row: Tag) -> str | None:
@@ -692,3 +790,18 @@ def editable_matches(matches: Iterable[Match]) -> list[Match]:
         m for m in matches
         if m.kickoff is None or m.kickoff > now
     ]
+
+
+def assign_global_indices(pages: list[TippabgabePage]) -> None:
+    """Assign sequential global indices to all matches across all Spieltage.
+
+    Kicktipp's tippabgabe page only exposes one Spieltag at a time, each with
+    its own 0-based match indices. Callers that work across several Spieltage
+    (e.g. when the current one is fully tipped and the next is already inside
+    the tipping window) need indices that stay unique across pages.
+    """
+    i = 0
+    for page in pages:
+        for m in page.matches:
+            m.index = i
+            i += 1

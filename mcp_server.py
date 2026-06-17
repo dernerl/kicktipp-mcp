@@ -35,6 +35,7 @@ from kicktipp import (
     LoginFailed,
     RankingEntry,
     TippabgabePage,
+    assign_global_indices,
     editable_matches,
     open_bonus_questions,
     tippable_matches,
@@ -63,15 +64,6 @@ def _client() -> KicktippClient:
     except LoginFailed as e:
         raise RuntimeError(f"kicktipp login failed: {e}") from e
     return client
-
-
-def _assign_global_indices(pages: list[TippabgabePage]) -> None:
-    """Assign sequential global indices to all matches across all Spieltage."""
-    i = 0
-    for page in pages:
-        for m in page.matches:
-            m.index = i
-            i += 1
 
 
 # ---------------------------------------------------------------------------
@@ -143,7 +135,7 @@ def list_open_matches() -> list[OpenMatch]:
     """
     client = _client()
     pages = client.fetch_all_editable()
-    _assign_global_indices(pages)
+    assign_global_indices(pages)
 
     out: list[OpenMatch] = []
     for page in pages:
@@ -168,7 +160,7 @@ def list_submitted_tips() -> list[SubmittedTip]:
     """
     client = _client()
     pages = client.fetch_all_editable()
-    _assign_global_indices(pages)
+    assign_global_indices(pages)
 
     out: list[SubmittedTip] = []
     for page in pages:
@@ -208,7 +200,7 @@ def submit_tips(
 
     # Re-fetch the full editable picture to get fresh form state.
     pages = client.fetch_all_editable()
-    _assign_global_indices(pages)
+    assign_global_indices(pages)
 
     # Build a global index → (page, match) lookup.
     index_to_entry: dict[int, tuple[TippabgabePage, object]] = {}

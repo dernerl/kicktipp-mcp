@@ -9,12 +9,14 @@ from datetime import datetime, timedelta
 
 from dotenv import load_dotenv
 
-from kicktipp import KicktippClient, LoginFailed, tippable_matches
+from kicktipp import KicktippClient, LoginFailed, assign_global_indices, tippable_matches
 from strategies import llm_tips, weighted_random_tip
 
 
 def main() -> int:
     load_dotenv()
+
+    print(f"\n=== kicktipp-ai run {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} ===")
 
     parser = argparse.ArgumentParser(description="Automated kicktipp bot")
     parser.add_argument(
@@ -67,7 +69,7 @@ def main() -> int:
         return 3
 
     try:
-        page = client.fetch_tippabgabe()
+        pages = client.fetch_all_open()
     except RuntimeError as e:
         if args.debug_html:
             url = f"https://www.kicktipp.de/{community}/tippabgabe"
@@ -78,21 +80,36 @@ def main() -> int:
         print(f"Could not parse tip page: {e}", file=sys.stderr)
         return 4
 
-    pending = tippable_matches(page.matches)
+    assign_global_indices(pages)
 
+    # Kicktipp's tippabgabe page defaults to whichever Spieltag it considers
+    # "current" — which only advances once that Spieltag is fully played,
+    # not once it's fully tipped. fetch_all_open() instead walks every
+    # Spieltag link so the next one is already visible as soon as it has
+    # untipped matches, even while the current one is still pending results.
+    all_open = [m for page in pages for m in tippable_matches(page.matches)]
+    match_to_page = {m.index: page for page in pages for m in page.matches}
+
+    pending = all_open
     if args.max_hours_ahead is not None:
         cutoff = datetime.now() + timedelta(hours=args.max_hours_ahead)
         pending = [m for m in pending if m.kickoff is None or m.kickoff <= cutoff]
 
-    print(f"Open matches: {len(page.matches)}, tippable now: {len(pending)}")
+    print(
+        f"Open matches: {len(all_open)} across {len(pages)} Spieltag(e), "
+        f"tippable now: {len(pending)}"
+    )
     if not pending:
         return 0
 
     if args.strategy == "random":
         tips = [weighted_random_tip() for _ in pending]
     else:
+        print("Fetching past results for tournament context...")
+        past_results = client.fetch_past_results()
+        print(f"  {len(past_results)} completed matches found.")
         print("Asking Claude for predictions (this may take a minute)...")
-        tips = llm_tips(pending)
+        tips = llm_tips(pending, past_results=past_results)
 
     for m, (h, a) in zip(pending, tips):
         kickoff = m.kickoff.strftime("%a %d %b %H:%M") if m.kickoff else "?"
@@ -102,8 +119,15 @@ def main() -> int:
         print("--dry-run: nothing submitted")
         return 0
 
-    tips_by_index = {m.index: tip for m, tip in zip(pending, tips)}
-    client.submit_tips(page, tips_by_index)
+    by_page: dict[int, dict[int, tuple[int, int]]] = {}
+    for m, tip in zip(pending, tips):
+        page = match_to_page[m.index]
+        by_page.setdefault(page.spieltag_index, {})[m.index] = tip
+
+    page_by_st = {p.spieltag_index: p for p in pages}
+    for st_idx, tips_map in sorted(by_page.items()):
+        client.submit_tips(page_by_st[st_idx], tips_map)
+
     print(f"Submitted {len(pending)} tips.")
     return 0
 
