@@ -9,7 +9,7 @@
     <array>
         <string>/bin/bash</string>
         <string>-lc</string>
-        <string>cd /absolute/path/to/kicktipp-ai &amp;&amp; ./run.sh</string>
+        <string>cd /Users/hug/projects/kicktipp-mcp &amp;&amp; ./run.sh</string>
     </array>
 
     <!-- Every 6 hours. World Cup 2026 has multiple matchdays per week;
@@ -20,9 +20,19 @@
     <key>RunAtLoad</key>
     <true/>
 
+    <!-- launchd's bash -lc only sources /etc/profile, not ~/.zshrc, so
+         ~/.local/bin (where `claude` lives) is missing from PATH. Point
+         strategies.py's CLAUDE_CLI override at the absolute path instead
+         of relying on PATH lookup. -->
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>CLAUDE_CLI</key>
+        <string>/Users/hug/.local/bin/claude</string>
+    </dict>
+
     <key>StandardOutPath</key>
-    <string>/tmp/kicktipp-ai.log</string>
+    <string>/Users/hug/Library/Logs/kicktipp-ai.log</string>
     <key>StandardErrorPath</key>
-    <string>/tmp/kicktipp-ai.log</string>
+    <string>/Users/hug/Library/Logs/kicktipp-ai.log</string>
 </dict>
 </plist>

@@ -18,7 +18,7 @@ The MCP server (`mcp_server.py`) provides three tools:
 The CLI bot (`main.py`) supports two strategies:
 
 - `random` — weighted Poisson scoreline sampling
-- `llm` — shells out to the Claude Code CLI (`claude -p`) to predict scores with web search
+- `llm` — shells out to the Claude Code CLI (`claude -p`) to predict scores with web search; automatically fetches all completed match results from Kicktipp and injects team form (goals, W/D/L, points) into the prompt as tournament context
 
 ## Requirements
 
@@ -68,7 +68,7 @@ Run `uv run python main.py --help` for all options (`--community`, `--debug-html
 
 `com.kicktipp-ai.bot.plist` runs the bot every 6 hours via launchd.
 
-1. Edit the plist and replace `/absolute/path/to/kicktipp-ai` with your real path.
+1. Edit the plist and set the correct project path in `ProgramArguments` (the `cd …` line).
 2. Copy it into place and load it:
 
    ```bash
@@ -76,7 +76,47 @@ Run `uv run python main.py --help` for all options (`--community`, `--debug-html
    launchctl load ~/Library/LaunchAgents/com.kicktipp-ai.bot.plist
    ```
 
-Logs are written to `/tmp/kicktipp-ai.log`.
+Logs are written to `~/Library/Logs/kicktipp-ai.log` (persistent across reboots).
+Each run starts with a timestamped header:
+
+```
+=== kicktipp-ai run 2026-06-16 22:00:01 ===
+Open matches: 8, tippable now: 4
+  [Wed 17 Jun 00:00] Irak 1 : 1 Norwegen
+  ...
+Submitted 4 tips.
+```
+
+Follow the log live:
+
+```bash
+tail -f ~/Library/Logs/kicktipp-ai.log
+```
+
+### Performance tracking
+
+Every submitted tip is appended to `data/tips_history.jsonl` with a `strategy`
+label (`random` or `llm`). On each run, `update_scores()` (`tracking.py`)
+fetches the by-then-completed match results from Kicktipp and fills in the
+real result + points for any tip whose match has since finished, using the
+standard Kicktipp scoring (3 pts exact score, 2 pts correct goal difference,
+1 pt correct tendency, 0 pts wrong tendency). The log then prints a running
+average per strategy, e.g.:
+
+```
+Scored 6 newly completed match(es).
+  [random] 7 pts / 8 matches (avg 0.88)
+  [llm] 13 pts / 13 matches (avg 1.00)
+```
+
+That's how `random` (the Poisson baseline) and `llm` (Claude with web search)
+get compared over time. `random` only has a handful of entries from manual
+testing before `llm` became the default strategy in `run.sh`.
+
+When using the `llm` strategy, the full reasoning Claude produced (odds,
+injury news, form) is printed to the log right before the final JSON tips —
+only the parsed scores get persisted to `tips_history.jsonl`, so the log is
+the only place to audit *why* a pick was made.
 
 ### MCP server (Claude Desktop)
 
@@ -92,10 +132,11 @@ You can then ask Claude to list open matches and submit tips for you.
 
 | File | Purpose |
 |------|---------|
-| `kicktipp.py` | Kicktipp HTTP client + HTML parsing |
+| `kicktipp.py` | Kicktipp HTTP client + HTML parsing (matches, tips, ranking, past results) |
 | `mcp_server.py` | FastMCP server exposing the tools |
 | `main.py` | CLI entry point for the bot |
 | `strategies.py` | Tipping strategies (random / llm) |
+| `tracking.py` | Tip history + score tracking (`data/tips_history.jsonl`) |
 | `run-mcp.sh` | Launcher Claude Desktop uses for the MCP server |
 | `run.sh` | Launcher the launchd job uses for the CLI bot |
 

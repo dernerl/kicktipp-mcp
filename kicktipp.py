@@ -10,6 +10,8 @@ from urllib.parse import parse_qs, urlparse
 
 import requests
 from bs4 import BeautifulSoup, Tag
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 
 BASE_URL = "https://www.kicktipp.de"
@@ -35,6 +37,10 @@ class Match:
     already_tipped: bool
     home_score: int | None = None   # populated when already_tipped=True
     away_score: int | None = None
+    # Bookmaker odds (1/X/2) scraped from the "quoten" cell, when present.
+    odds_home: float | None = None
+    odds_draw: float | None = None
+    odds_away: float | None = None
     # Hidden fields inside the tipp cell (e.g. tippAbgegeben=true).
     # Must be included in the POST for every match in the form.
     tipp_hidden_fields: dict[str, str] = field(default_factory=dict)
@@ -69,6 +75,7 @@ class RankingEntry:
     tendency_points: int | None = None
     difference_points: int | None = None
     exact_points: int | None = None
+    is_self: bool = False
 
 
 @dataclass
@@ -106,6 +113,17 @@ class KicktippClient:
         self.community = community
         self.session = requests.Session()
         self.session.headers.update({"User-Agent": USER_AGENT})
+
+        # requests' default adapter retries 0 times, so a single dropped
+        # connection (seen in practice: kicktipp.de closing the connection
+        # mid-response during fetch_past_results) crashes the whole run.
+        # Retry GET/HEAD/etc. with backoff; POST (login, submit_tips) is
+        # intentionally excluded since we can't tell if it was already
+        # processed server-side before the connection dropped.
+        retry = Retry(total=3, backoff_factor=1, status_forcelist=[429, 500, 502, 503, 504])
+        adapter = HTTPAdapter(max_retries=retry)
+        self.session.mount("https://", adapter)
+        self.session.mount("http://", adapter)
 
     def login(self) -> None:
         # Prime the session (cookies, any CSRF the login page sets)
@@ -385,6 +403,8 @@ def parse_tippabgabe(html: str, fallback_action: str) -> TippabgabePage | None:
         away_val = (away_input.get("value") or "").strip()
         already_tipped = bool(home_val and away_val)
 
+        odds_home, odds_draw, odds_away = _extract_odds(row)
+
         home_score: int | None = None
         away_score: int | None = None
         if already_tipped:
@@ -408,6 +428,9 @@ def parse_tippabgabe(html: str, fallback_action: str) -> TippabgabePage | None:
                 already_tipped=already_tipped,
                 home_score=home_score,
                 away_score=away_score,
+                odds_home=odds_home,
+                odds_draw=odds_draw,
+                odds_away=odds_away,
                 tipp_hidden_fields=tipp_hidden,
             )
         )
@@ -522,7 +545,14 @@ def parse_ranking(html: str) -> list[RankingEntry]:
         except ValueError:
             continue
 
-        entries.append(RankingEntry(rank=rank, player=player, points=points))
+        # Kicktipp marks the logged-in user's own row with an extra "treffer"
+        # class on the <tr> (in addition to the always-present "teilnehmer…" id).
+        row_classes = row.get("class") or []
+        is_self = "treffer" in row_classes
+
+        entries.append(
+            RankingEntry(rank=rank, player=player, points=points, is_self=is_self)
+        )
 
     return entries
 
@@ -713,6 +743,32 @@ def _find_score_inputs(node: Tag) -> list[Tag]:
             continue
         result.append(inp)
     return result
+
+
+def _extract_odds(row: Tag) -> tuple[float | None, float | None, float | None]:
+    """Read bookmaker odds (1/X/2) from the row's "quoten" cell, if present.
+
+    Kicktipp embeds these as affiliate links (class quoteheim/quoteremis/
+    quotegast) with a nested <span class="quote-text"> holding the value.
+    Present on open matches too — no need to web-search for odds.
+    """
+    quoten_cell = row.find("td", class_="quoten")
+    if quoten_cell is None:
+        return None, None, None
+
+    def _read(cls: str) -> float | None:
+        a = quoten_cell.find("a", class_=cls)
+        if a is None:
+            return None
+        span = a.find("span", class_="quote-text")
+        if span is None:
+            return None
+        try:
+            return float(span.get_text(strip=True))
+        except ValueError:
+            return None
+
+    return _read("quoteheim"), _read("quoteremis"), _read("quotegast")
 
 
 def _extract_teams_typed(row: Tag) -> tuple[str, str] | None:

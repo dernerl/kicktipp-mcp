@@ -7,10 +7,12 @@ import os
 import sys
 from datetime import datetime, timedelta
 
+import requests
 from dotenv import load_dotenv
 
 from kicktipp import KicktippClient, LoginFailed, assign_global_indices, tippable_matches
 from strategies import llm_tips, weighted_random_tip
+from tracking import record_tips, update_scores
 
 
 def main() -> int:
@@ -69,6 +71,23 @@ def main() -> int:
         return 3
 
     try:
+        past_results = client.fetch_past_results()
+    except requests.RequestException as e:
+        # Don't let a transient network hiccup here block tip submission below -
+        # missing a tip deadline is worse than a missed score-tracking update.
+        print(f"Could not fetch past results, skipping score tracking this run: {e}", file=sys.stderr)
+        past_results = []
+
+    if past_results:
+        score_summary = update_scores(past_results)
+        if score_summary.get("newly_scored"):
+            print(f"Scored {score_summary['newly_scored']} newly completed match(es).")
+        if score_summary.get("total_matches"):
+            for strat, s in score_summary["by_strategy"].items():
+                avg = s["points"] / s["matches"]
+                print(f"  [{strat}] {s['points']} pts / {s['matches']} matches (avg {avg:.2f})")
+
+    try:
         pages = client.fetch_all_open()
     except RuntimeError as e:
         if args.debug_html:
@@ -105,11 +124,13 @@ def main() -> int:
     if args.strategy == "random":
         tips = [weighted_random_tip() for _ in pending]
     else:
-        print("Fetching past results for tournament context...")
-        past_results = client.fetch_past_results()
-        print(f"  {len(past_results)} completed matches found.")
+        print(f"Using {len(past_results)} completed matches as tournament context...")
+        ranking = client.fetch_ranking()
+        self_entry = next((e for e in ranking if e.is_self), None)
+        if self_entry:
+            print(f"  Standing: rank {self_entry.rank}/{len(ranking)}, {self_entry.points} pts.")
         print("Asking Claude for predictions (this may take a minute)...")
-        tips = llm_tips(pending, past_results=past_results)
+        tips = llm_tips(pending, past_results=past_results, ranking=ranking)
 
     for m, (h, a) in zip(pending, tips):
         kickoff = m.kickoff.strftime("%a %d %b %H:%M") if m.kickoff else "?"
@@ -128,6 +149,7 @@ def main() -> int:
     for st_idx, tips_map in sorted(by_page.items()):
         client.submit_tips(page_by_st[st_idx], tips_map)
 
+    record_tips(pending, tips, args.strategy)
     print(f"Submitted {len(pending)} tips.")
     return 0
 
