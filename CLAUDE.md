@@ -37,6 +37,7 @@ Kicktipp football-tipping bot with two entry points plus a results dashboard:
 ```bash
 uv run python main.py --strategy random --dry-run    # bot, prints tips, submits nothing
 uv run python ranking_history.py                     # rebuild dashboard data (logs in once)
+uv run python odds_history.py --backfill             # pull real historical odds (all Spieltage)
 uv run python dashboard.py                            # serve dashboard at http://localhost:8765
 uv run python -m py_compile <files>                  # quick sanity check (no test suite)
 ```

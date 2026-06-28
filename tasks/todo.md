@@ -114,10 +114,10 @@ ADR `docs/adr/0004-quoten-mitschnitt-forward-only.md`.
 - Feature A: `OpenMatch`-Objekte aus dem Tool-Pfad tragen jetzt `odds_home/draw/away`
   (13 von 31 offenen Spielen mit Quoten — die übrigen ohne Quote bzw. bereits getippt).
 
-### Einschränkung
-- Forward-only: Quoten **vor** Einführung fehlen dauerhaft (kein Backfill möglich,
-  weil Kicktipp Quoten nur pre-kickoff zeigt). Upsert behält keinen Quoten-*Verlauf*
-  pro Spiel, nur den letzten Stand vor Anpfiff.
+### Einschränkung (korrigiert in Nachtrag 7)
+- ~~Forward-only, kein Backfill möglich~~ — **falsch.** Kicktipp zeigt die Quoten auf
+  der Tippabgabe-Seite für alle Spieltage (auch gespielte) → rückwirkend nachgefüllt
+  (siehe Nachtrag 7 / ADR 0007). Upsert behält weiterhin keinen Quoten-*Verlauf* pro Spiel.
 
 ---
 
@@ -136,3 +136,31 @@ Abweichendes Punktesystem entdeckt und korrigiert. Siehe
 ### Verifikation
 - `py_compile` → OK; 68/68 `is_self`-Tipps aus community_tips 100 % korrekt;
   Remis 1:1 vs 3:3 → `"tendency"` ✓; Dashboard HTTP 200.
+
+---
+
+## Nachtrag 7 (persönlicher Bereich, Quoten-Craziness + rückwirkender Backfill, „als Einziger")
+
+Dedizierte Task-Files: `todo-persoenlicher-bereich.md`, `todo-quoten-craziness.md`.
+
+- **Persönlicher Bereich** umgebaut (ERLEDIGT): Grün-Bug gefixt (Ergebnis nach Ausgang
+  gefärbt), llm/random-Vergleich raus → Platz/Punkte/Trefferquote, kein Filter, neueste
+  zuerst, „Warum?" bleibt.
+- **Verrückte Tipps** auf **echte Buchmacher-Quoten** umgestellt (Hybrid, ADR 0006):
+  „gegen die Quote" — Außenseiter exakt getippt = verrückt, verlorener Favorit = daneben.
+- **Quoten-Backfill direkt aus Kicktipp** (ADR 0007): die „forward-only/kein Backfill"-
+  Annahme war falsch — Quoten stehen auf der Tippabgabe-Seite für alle Spieltage.
+  `odds_history.py --backfill` → 68/68 gespielte Spiele mit echter ODDSET-Quote, alle
+  Crazy-Cards `odds_based`.
+- **„als Einziger"**: Treffer-Badge kombiniert Exklusivität + Quote
+  (`n_exact==1` → „🎯 als Einziger · Quote 3.5", sonst „nur 2/12 · Quote 3.5").
+
+### Verifikation
+- `py_compile` (kicktipp/odds_history/dashboard) + `node --check` JS → OK.
+- Backfill idempotent (Re-Run added=0); Headless-Screenshots der drei Sektionen.
+
+### Offen
+- LLM-Strategie-Prompt: reales Turnier klarstellen + Scoring 4/3/2/0
+  (`todo-llm-strategie-realturnier.md`).
+- `todo-auszeichnungen.md` — von einem Agenten angelegt, vom User **nicht** beauftragt;
+  Klärung ausstehend.

@@ -298,6 +298,10 @@ def build_timeline() -> list[dict]:
 
 
 def build_payload() -> dict:
+    # Lazy import breaks the awards <-> dashboard import cycle (awards reuses our
+    # craziness helpers; we only need build_awards at request time).
+    from awards import build_awards
+
     tips = [_enrich_tip(t) for t in _read_jsonl(TIPS_PATH)]
     ranking = _read_jsonl(RANKING_PATH)
     timeline = build_timeline()
@@ -328,6 +332,7 @@ def build_payload() -> dict:
         "ranking_history": ranking,
         "timeline": timeline,
         "crazy": build_crazy(),
+        "awards": build_awards(),
         "standings_timeline": log["standings_timeline"],
         "summary": summary,
     }

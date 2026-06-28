@@ -1,6 +1,6 @@
 # Todo: Persönlicher Bereich überarbeiten
 
-**Status:** offen (gemeinsam angehen) · **Erfasst:** 2026-06-28
+**Status:** ERLEDIGT (2026-06-28) · **Erfasst:** 2026-06-28
 
 Betrifft Abschnitt C im Dashboard (`web/dashboard.html`, `sectionPersonal` /
 `renderTipsTable` / `renderStats`).
@@ -33,12 +33,19 @@ Betrifft Abschnitt C im Dashboard (`web/dashboard.html`, `sectionPersonal` /
   → hängt am Punktesystem-Fix (siehe `tasks/todo-punktesystem.md`, 4/3/2/0).
   Einfärbung nach Tipp-vs-Ergebnis geht unabhängig davon sofort.
 
-## Aufgaben (Erstentwurf — beim Angehen verfeinern)
-- [ ] Ergebnis-/Zeilen-Einfärbung nach Tipp-vs-Ergebnis (Bug-Fix, sofort).
-- [ ] Strategie-Vergleich entfernen/verkleinern; sinnvollere Kennzahlen.
-- [ ] Filter/Sortierung überdenken.
-- [ ] Optional: echte Punkte anzeigen (nach Punktesystem-Fix).
+## Aufgaben
+- [x] Ergebnis-/Zeilen-Einfärbung nach Tipp-vs-Ergebnis (Grün-Bug behoben:
+      `.score.res-${status}`, exakt grün / Diff blau / Tendenz amber / daneben rot / offen grau).
+- [x] Strategie-Vergleich entfernt; stattdessen Kacheln **Aktueller Platz · Punkte ·
+      Trefferquote** (exakt/teils/daneben).
+- [x] Filter entfernt (kein llm/random-Filter mehr), Tabelle **neueste zuerst**;
+      Spalte „Ausgang" (Pill) statt Pkt-/Strategie-Spalte.
+- [x] „Warum?"-Panel (LLM-Reasoning aus dem Log) beibehalten.
+- [~] Echte Punkte anzeigen: durch den 4/3/2/0-Fix (ADR 0005) sind die Punkte jetzt
+      korrekt; der „Punkte"-Wert oben kommt aus `ranking_history` (echter Tabellenstand).
 
-## Hinweis
-Wird **interaktiv mit dem User** gemacht („mit dir angehen") — vor größeren
-Umbauten kurz abstimmen, nicht einfach durchziehen.
+## Review (2026-06-28)
+Umgesetzt: Grün-Bug per Agent gefixt, Umbau interaktiv mit dem User (Vorgaben:
+Platz/Punkte/Trefferquote, kein Filter, Warum behalten). Headless-Screenshot bestätigt:
+daneben-Zeilen rot, Teiltreffer blau/amber, exakt grün. JS syntaxgeprüft, keine toten
+Referenzen (`renderFilters`/`pFilter`/Strategie-Badge raus).
