@@ -3,6 +3,11 @@
 **Datum:** 2026-06-28
 **Status:** Akzeptiert
 
+> **Update (ADR 0007):** Die hier erwähnte Einschränkung „echte Quoten nur forward-only,
+> kein Backfill" gilt nicht mehr — die Quoten wurden direkt aus Kicktipp rückwirkend
+> nachgefüllt (68/68 Spiele). Die Quoten-basierte Craziness greift damit für alle bereits
+> gespielten Spiele, nicht erst für künftige. Der Hybrid-Fallback bleibt für Spiele ohne Quote.
+
 ## Kontext
 
 Der Dashboard-Bereich „Verrückte Tipps" bewertet bisher exakte Treffer und Fehlschüsse

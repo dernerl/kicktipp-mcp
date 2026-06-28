@@ -1,7 +1,12 @@
 # ADR 0004: Quoten-Mitschnitt forward-only (kein Backfill), Upsert pro Match
 
 **Date:** 2026-06-28
-**Status:** Accepted
+**Status:** Accepted — teilweise korrigiert durch ADR 0007
+
+> **Update (ADR 0007):** Die Kernannahme — Quoten seien nicht rückwirkend abrufbar,
+> daher „kein Backfill" — war **falsch.** Kicktipp zeigt die Quoten auf der Tippabgabe-
+> Seite für alle Spieltage (auch gespielte). Der `record_odds`-Mitschnitt pro Lauf bleibt
+> gültig; „kein Backfill möglich" ist es nicht. Siehe ADR 0007.
 
 ---
 

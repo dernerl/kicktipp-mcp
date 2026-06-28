@@ -129,12 +129,19 @@ only the parsed scores get persisted to `tips_history.jsonl`, so the log is
 the only place to audit *why* a pick was made.
 
 Each run also snapshots the bookmaker odds (1/X/2) of every still-open match
-into `data/odds_history.jsonl` (`odds_history.py`). Kicktipp only exposes odds
-*before* kickoff and never retroactively, so this is forward-only: while a match
-stays open its row is upserted (overwritten) with the latest odds, leaving the
-final stored value as close to kickoff as the last run before it started. This
-runs independently of `--dry-run` and is best-effort — a failure here never
-aborts the bot run.
+into `data/odds_history.jsonl` (`odds_history.py`, `record_odds`), upserting each
+match's row with the latest odds while it stays open. This runs independently of
+`--dry-run` and is best-effort — a failure here never aborts the bot run.
+
+Kicktipp keeps showing the ODDSET odds on the Tippabgabe page for *already played*
+Spieltage too, so historical odds can be **backfilled** in one pass:
+
+```bash
+uv run python odds_history.py --backfill   # real ODDSET odds for all Spieltage
+```
+
+Backfilled rows are tagged `source: "kicktipp-backfill"` and never clobber
+forward-captured ones. See ADR 0007.
 
 ### Dashboard (localhost)
 

@@ -1,6 +1,13 @@
 # Todo: „Verrückte Tipps" mit den Buchmacher-Quoten verbinden
 
-**Status:** offen · **Erfasst:** 2026-06-28
+**Status:** ERLEDIGT (2026-06-28) · **Erfasst:** 2026-06-28
+
+> **Update:** Die unten genannte „forward-only / kein Backfill"-Einschränkung war falsch.
+> Kicktipp zeigt die ODDSET-Quoten auf der Tippabgabe-Seite für ALLE Spieltage (auch
+> gespielte). Die echten historischen Quoten wurden direkt nachgefüllt
+> (`odds_history.py --backfill`, ADR 0007): **68/68 Community-Spiele mit Quote**, alle
+> Crazy-Cards jetzt `odds_based` mit echten ODDSET-Quoten („Außenseiter · Quote 3.5" /
+> „Favorit verlor · Quote 1.1"). Der Hybrid-Fallback (ADR 0006) bleibt für Spiele ohne Quote.
 
 ## Idee
 

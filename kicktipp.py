@@ -274,6 +274,27 @@ class KicktippClient:
             details.append(parse_spieltag_detail(r.text, st_idx, label))
         return details
 
+    def fetch_all_odds(self) -> list[dict]:
+        """Scrape 1/X/2 odds for every Spieltag from the Tippabgabe pages.
+
+        Kicktipp shows the ODDSET odds on the Tippabgabe page for *all* Spieltage,
+        including already-played ones, so this works retroactively.  The reliable
+        Spieltag list comes from the Tippübersicht nav (the Tippabgabe nav only
+        links prev/next).
+        """
+        links = _parse_spieltag_links(
+            self.session.get(f"{BASE_URL}/{self.community}/tippuebersicht", timeout=15).text
+        )
+        url = f"{BASE_URL}/{self.community}/tippabgabe"
+        out: list[dict] = []
+        for st_idx, label, tsid in links:
+            r = self.session.get(
+                url, params={"spieltagIndex": st_idx, "tippsaisonId": tsid}, timeout=15
+            )
+            r.raise_for_status()
+            out.extend(parse_tippabgabe_odds(r.text, st_idx, label))
+        return out
+
     def fetch_bonus_page(self) -> BonusPage | None:
         """Fetch the bonus-question page.  Returns None if there are no questions."""
         url = f"{BASE_URL}/{self.community}/tippabgabe"
@@ -942,6 +963,56 @@ def _extract_teams_typed(row: Tag) -> tuple[str, str] | None:
     if len(teams) < 2:
         return None
     return teams[-2], teams[-1]
+
+
+def parse_tippabgabe_odds(
+    html: str, spieltag_index: int, spieltag_label: str
+) -> list[dict]:
+    """Parse the read-only odds rows of a Tippabgabe page (any Spieltag).
+
+    Unlike `parse_tippabgabe` (which reads the editable tip-entry form — empty
+    once a Spieltag has been played), this reads the always-present
+    `tippabgabeSpiele` table: each row has the date, the two teams, the result
+    and the ODDSET 1/X/2 odds cell.  So odds are retrievable for *every*
+    Spieltag, including ones already played — Kicktipp keeps showing them.
+    """
+    soup = BeautifulSoup(html, "html.parser")
+    table = soup.find("table", id="tippabgabeSpiele")
+    out: list[dict] = []
+    if table is None:
+        return out
+
+    for row in table.find_all("tr"):
+        if row.find("td", class_="quoten") is None:
+            continue
+        oh, od, oa = _extract_odds(row)
+        if oh is None and od is None and oa is None:
+            continue
+        tds = row.find_all("td")
+        # Layout: time | home | away | result | quoten — teams sit right after
+        # the time cell, which is robust against the result/quoten columns.
+        time_idx = next(
+            (i for i, td in enumerate(tds) if "kicktipp-time" in (td.get("class") or [])),
+            None,
+        )
+        if time_idx is None or time_idx + 2 >= len(tds):
+            continue
+        home = tds[time_idx + 1].get_text(strip=True)
+        away = tds[time_idx + 2].get_text(strip=True)
+        if not home or not away:
+            continue
+        kickoff = _kickoff_from_text(tds[time_idx].get_text(strip=True))
+        out.append({
+            "spieltag_index": spieltag_index,
+            "spieltag_label": spieltag_label,
+            "home_team": home,
+            "away_team": away,
+            "kickoff": kickoff.isoformat() if kickoff else None,
+            "odds_home": oh,
+            "odds_draw": od,
+            "odds_away": oa,
+        })
+    return out
 
 
 def _extract_teams(row: Tag) -> tuple[str, str] | None:

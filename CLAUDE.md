@@ -18,9 +18,12 @@ Kicktipp football-tipping bot with two entry points plus a results dashboard:
   (verified 1:1 against the live cell points in `community_tips.jsonl`). Tip-outcome
   classification (`dashboard._enrich_tip` `status`, and *Verrückte Tipps*) is done by
   tip-vs-result, so it's correct regardless of the point values. See ADR 0005.
-- **Bookmaker odds only exist pre-kickoff.** Kicktipp shows 1/X/2 odds only on the
-  Tippabgabe page for upcoming matches and never retroactively. `odds_history.py`
-  snapshots them forward-only (upsert per match); past-match odds can't be backfilled.
+- **Bookmaker odds: live forward-capture + retroactive backfill.** Kicktipp shows the
+  ODDSET 1/X/2 odds on the Tippabgabe page for *every* Spieltag, including already-played
+  ones (table `tippabgabeSpiele`). `odds_history.record_odds` upserts open-match odds each
+  run; `odds_history.backfill_odds` pulls the real historical odds for all Spieltage in one
+  pass (`KicktippClient.fetch_all_odds`). Stored in `data/odds_history.jsonl`. (Earlier docs
+  wrongly claimed odds couldn't be backfilled — see ADR 0007.)
 - **`data/` is gitignored and regenerable** — never commit it. The dashboard's inputs
   are rebuilt by `ranking_history.py` (writes `ranking_history.jsonl`,
   `ranking_steps.jsonl`, `community_tips.jsonl`); `tips_history.jsonl`/`odds_history.jsonl`
