@@ -1,6 +1,6 @@
 # Todo: Abweichendes Punktesystem der Tipprunde korrigieren
 
-**Status:** offen · **Priorität:** hoch (verfälscht aktuell Punkte & llm/random-Vergleich)
+**Status:** erledigt ✓ · **Priorität:** hoch (verfälscht aktuell Punkte & llm/random-Vergleich)
 **Erfasst:** 2026-06-28
 
 ## Problem
@@ -42,21 +42,14 @@ def _points(h_tip, a_tip, h_res, a_res) -> int:
 
 ## Betroffen / zu erledigen
 
-- [ ] **Schema final gegenprüfen** an der Live-Seite (idealerweise inkl. eines
-      exakten Remis-Tipps, falls in den Daten auffindbar) — `community_tips.jsonl`
-      ist die Wahrheit (echte Zellen-Punkte). Optional: Schema konfigurierbar
-      machen, da Communities abweichen.
-- [ ] `tracking._points` auf 4/3/2/0 + Remis-Sonderfall umstellen.
-- [ ] **Historische Punkte neu berechnen** in `data/tips_history.jsonl`.
-      Achtung: `update_scores()` füllt nur `points == null` — für bereits
-      bepunktete Einträge braucht es eine einmalige Migration (alle `points`
-      neu aus Tipp+Ergebnis berechnen).
-- [ ] Prüfen, dass `dashboard.py` `build_payload()`-`summary` (llm/random avg)
-      danach die korrigierten Punkte zeigt.
-- [ ] `README.md` anpassen: der Satz „standard Kicktipp scoring (3 pts exact …)"
-      (Abschnitt *Performance tracking*) beschreibt das falsche Schema.
-- [ ] ADR `docs/adr/000X-abweichendes-punktesystem.md` (Nygard) für die
-      Entdeckung + Korrektur.
+- [x] **Schema final gegenprüfen** — `community_tips.jsonl` ist die Wahrheit.
+      68/68 `is_self`-Tipps stimmen 100 % mit korrigierter Formel überein.
+- [x] `tracking._points` auf 4/3/2/0 + Remis-Sonderfall umgestellt.
+- [x] **Historische Punkte neu berechnet** in `data/tips_history.jsonl`.
+      Backup: `data/tips_history.jsonl.bak`. 33/54 Einträge geändert, Summe 56→89.
+- [x] `dashboard.py` `build_payload()`-`summary` zeigt korrigierte Punkte (llm 45M/79pts/avg 1.76, random 8M/10pts/avg 1.25).
+- [x] `README.md` angepasst: 4/3/2/0 statt „standard 3 pts exact …".
+- [x] ADR `docs/adr/0005-punktesystem-4-3-2-0.md` angelegt.
 
 ## Elegantere Alternative (statt nachrechnen)
 
@@ -81,3 +74,15 @@ immun gegen jede Schema-Abweichung. Abwägen: `tips_history` ist die Bot-Quelle,
 - `_points` gegen `community_tips.jsonl` testen: für dernerls Tipps muss der neu
   berechnete Wert exakt den dort gespeicherten Zellen-Punkten entsprechen.
 - llm/random-Schnitte vor/nach dem Fix vergleichen und plausibilisieren.
+
+## Review (2026-06-28)
+
+**Erledigt.** Alle sechs Punkte abgehakt.
+
+Verifikationsbelege:
+- `py_compile tracking.py dashboard.py` → OK
+- `_points` vs. community_tips: **68/68 ok** (100 %)
+- Remis-Klassifikation: Tipp 1:1 / Ergebnis 3:3 → `status="tendency"` ✓
+- Migration: 33/54 Einträge geändert, Punktsumme 56 → 89; Backup in `data/tips_history.jsonl.bak`
+- Dashboard: HTTP 200, summary llm 79pts/45M avg 1.76, random 10pts/8M avg 1.25
+- ADR: `docs/adr/0005-punktesystem-4-3-2-0.md` angelegt

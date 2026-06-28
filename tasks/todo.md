@@ -118,3 +118,21 @@ ADR `docs/adr/0004-quoten-mitschnitt-forward-only.md`.
 - Forward-only: Quoten **vor** Einführung fehlen dauerhaft (kein Backfill möglich,
   weil Kicktipp Quoten nur pre-kickoff zeigt). Upsert behält keinen Quoten-*Verlauf*
   pro Spiel, nur den letzten Stand vor Anpfiff.
+
+---
+
+## Nachtrag 6 (Punktesystem-Korrektur 4/3/2/0)
+
+Abweichendes Punktesystem entdeckt und korrigiert. Siehe
+`tasks/todo-punktesystem.md` (vollständig) und ADR `docs/adr/0005-punktesystem-4-3-2-0.md`.
+
+### Geänderte Dateien
+- `tracking.py` — `_points()` auf 4/3/2/0 + Remis-Sonderfall (0→4 exakt, 2→3 Differenz, 1→2 Tendenz)
+- `dashboard.py` — `_enrich_tip()` status scoring-unabhängig (Tipp-vs-Ergebnis statt Punktwert)
+- `data/tips_history.jsonl` — Migration: 33/54 Einträge neu berechnet, Summe 56→89; Backup `.bak`
+- `README.md` — Performance-Tracking-Abschnitt und Scoring-Note auf 4/3/2/0 korrigiert
+- `docs/adr/0005-punktesystem-4-3-2-0.md` — neu angelegt
+
+### Verifikation
+- `py_compile` → OK; 68/68 `is_self`-Tipps aus community_tips 100 % korrekt;
+  Remis 1:1 vs 3:3 → `"tendency"` ✓; Dashboard HTTP 200.

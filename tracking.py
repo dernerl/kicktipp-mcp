@@ -54,14 +54,15 @@ def record_tips(matches: list[Match], tips: list[tuple[int, int]], strategy: str
 
 def _points(h_tip: int, a_tip: int, h_res: int, a_res: int) -> int:
     if h_tip == h_res and a_tip == a_res:
-        return 3
+        return 4                                   # exakt
     diff_tip = h_tip - a_tip
     diff_res = h_res - a_res
     tendency_tip = (diff_tip > 0) - (diff_tip < 0)
     tendency_res = (diff_res > 0) - (diff_res < 0)
     if tendency_tip != tendency_res:
-        return 0
-    return 2 if diff_tip == diff_res else 1
+        return 0                                   # falsche Tendenz
+    # Richtige Tordifferenz nur bei Nicht-Remis = 3; Remis (diff==0) gibt nur 2.
+    return 3 if (diff_tip == diff_res and diff_res != 0) else 2
 
 
 def update_scores(past_results: list[PastResult]) -> dict:

@@ -115,6 +115,12 @@
   .st-tendency { background: #3a3320; color: var(--amber); }
   .st-miss { background: var(--red-dim); color: var(--red); }
   .st-open { background: var(--panel2); color: var(--muted); }
+  .score.res-exact { background: var(--green-dim); color: var(--green); }
+  .score.res-diff { background: #2a3a4d; color: var(--blue); }
+  .score.res-tendency { background: #3a3320; color: var(--amber); }
+  .score.res-miss { background: var(--red-dim); color: var(--red); }
+  .score.res-open { background: var(--panel2); color: var(--muted); }
+  .outcome { display: inline-block; padding: 2px 9px; border-radius: 6px; font-size: 12px; font-weight: 600; }
   .why-row td { background: #131922; }
   .why { white-space: pre-wrap; font-size: 13px; color: var(--text); line-height: 1.55; padding: 6px 4px; max-height: 360px; overflow: auto; }
   .why-run { color: var(--muted); font-size: 11.5px; margin-bottom: 8px; }
@@ -397,7 +403,7 @@ function sectionCrazy() {
   const miss  = (DATA.crazy.miss  || []).slice(0,6);
   sec.innerHTML = `
     <h2>Verrückte Tipps</h2>
-    <p class="section-hint">Bewertet gegen den Tippkreis (= die Quote): exakte Treffer, die kaum jemand sonst hatte und gegen das Feld gingen (gold) — und krasse Fehlschüsse auf Ergebnisse, die fast alle schockten (rot).</p>
+    <p class="section-hint">Bewertet gegen die Buchmacher-Quote (wo vorhanden), sonst gegen den Tippkreis: exakte Treffer auf krasse Außenseiter (gold) — und klare Favoriten, die verloren und trotzdem getippt wurden (rot).</p>
     <div class="panel"><div class="crazy-grid">
       <div class="crazy-col"><h3>🏆 Wahnsinns-Treffer</h3>${exact.map(crazyCard).join("") || emptyNote}</div>
       <div class="crazy-col"><h3>💥 Komplett daneben</h3>${miss.map(crazyCard).join("") || emptyNote}</div>
@@ -407,9 +413,17 @@ function sectionCrazy() {
 const emptyNote = `<p class="section-hint">Noch nichts.</p>`;
 function crazyCard(t) {
   const who = `<span class="who${t.is_self?' self':''}">${esc(t.player)}</span>`;
-  const rare = t.status === "exact"
-    ? `nur ${t.n_exact}/${t.n_players} exakt`
-    : `${t.n_tend}/${t.n_players} Tendenz`;
+  let rare;
+  if (t.odds_based) {
+    const oddsStr = t.outcome_odds != null ? ` · Quote ${t.outcome_odds}` : "";
+    rare = t.status === "exact"
+      ? `Außenseiter${oddsStr}`
+      : `Favorit verlor${oddsStr}`;
+  } else {
+    rare = t.status === "exact"
+      ? `nur ${t.n_exact}/${t.n_players} exakt`
+      : `${t.n_tend}/${t.n_players} Tendenz`;
+  }
   return `<div class="tipcard ${t.status}">
     <div class="teams">
       <div>${who} · <b>${esc(t.home)}</b> vs <b>${esc(t.away)}</b></div>
@@ -422,71 +436,58 @@ function crazyCard(t) {
 }
 
 /* ---------------- Section C: personal ---------------- */
-let pFilter = "all";
 function sectionPersonal() {
   const sec = el("section");
   sec.innerHTML = `
     <h2>Persönlicher Bereich</h2>
-    <p class="section-hint">Alle Tipps des Bots und ob sie eingetroffen sind. Zeilen mit 💬 aufklappen für Claudes Begründung.</p>
+    <p class="section-hint">Alle Tipps des Bots, neueste zuerst — Ergebnis und Tipp eingefärbt nach Ausgang. Zeilen mit 💬 aufklappen für Claudes Begründung.</p>
     <div class="stats" id="stats"></div>
-    <div class="filters" id="filters"></div>
     <div class="panel" id="tipsPanel"></div>`;
-  setTimeout(() => { renderStats(); renderFilters(); renderTipsTable(); }, 0);
+  setTimeout(() => { renderStats(); renderTipsTable(); }, 0);
   return sec;
 }
 
 function renderStats() {
-  const s = DATA.summary;
-  const last = DATA.standings_timeline[DATA.standings_timeline.length-1];
-  const selfRank = (() => {
-    const rows = DATA.ranking_history.filter(r=>r.is_self);
-    return rows.length ? rows[rows.length-1] : null;
-  })();
+  const scored = DATA.tips.filter(t => t.status && t.status !== "open");
+  const c = { exact: 0, diff: 0, tendency: 0, miss: 0 };
+  scored.forEach(t => { if (t.status in c) c[t.status]++; });
+  const teil = c.diff + c.tendency;
+  const selfRows = DATA.ranking_history.filter(r => r.is_self);
+  const selfRank = selfRows.length ? selfRows[selfRows.length - 1] : null;
+  const nPlayers = new Set(DATA.ranking_history.map(r => r.player)).size;
+
   const cards = [];
-  if (selfRank) cards.push(stat("Aktueller Platz", `${selfRank.rank}.`, `${selfRank.points} Pkt`));
-  if (s.llm) cards.push(stat("Ø llm", s.llm.avg, `${s.llm.points} Pkt / ${s.llm.matches}`));
-  if (s.random) cards.push(stat("Ø random", s.random.avg, `${s.random.points} Pkt / ${s.random.matches}`));
-  if (s.llm && s.random) {
-    const better = s.llm.avg >= s.random.avg ? "llm" : "random";
-    cards.push(stat("Beste Strategie", better, `+${Math.abs(s.llm.avg-s.random.avg).toFixed(2)} Ø`));
+  if (selfRank) {
+    cards.push(stat("Aktueller Platz", `${selfRank.rank}.`, nPlayers ? `von ${nPlayers}` : ""));
+    cards.push(stat("Punkte", `${selfRank.points}`, "in der Tabelle"));
   }
+  cards.push(stat("Trefferquote", `${c.exact}× exakt`,
+    `${teil}× teils · ${c.miss}× daneben (von ${scored.length})`));
   document.getElementById("stats").innerHTML = cards.join("");
 }
 function stat(k,v,sub){ return `<div class="stat"><div class="k">${k}</div><div class="v">${v} <small>${sub||""}</small></div></div>`; }
 
-function renderFilters() {
-  const opts = [["all","Alle"],["llm","llm"],["random","random"]];
-  document.getElementById("filters").innerHTML = opts.map(([k,l])=>
-    `<button data-f="${k}" class="${pFilter===k?'active':''}">${l}</button>`).join("");
-  document.querySelectorAll("#filters button").forEach(b =>
-    b.onclick = () => { pFilter = b.dataset.f; renderFilters(); renderTipsTable(); });
-}
-
-const STATUS_LABEL = { exact:"3", diff:"2", tendency:"1", miss:"0", open:"–" };
+const OUTCOME_LABEL = { exact:"Exakt", diff:"Differenz", tendency:"Tendenz", miss:"Daneben", open:"Offen" };
 function renderTipsTable() {
-  let tips = DATA.tips.slice();
-  if (pFilter!=="all") tips = tips.filter(t=>t.strategy===pFilter);
-  // newest first: by kickoff desc, fallback timestamp
-  tips.sort((a,b)=> (b.kickoff||b.timestamp||"").localeCompare(a.kickoff||a.timestamp||""));
+  const tips = DATA.tips.slice()
+    .sort((a,b)=> (b.kickoff||b.timestamp||"").localeCompare(a.kickoff||a.timestamp||""));  // newest first
   const rows = tips.map((t,i) => {
-    const why = t.reasoning ? "💬" : "";
     const cls = t.reasoning ? "has-why" : "";
     const main = `<tr class="${cls}" data-i="${i}">
-      <td class="nowrap"><span class="st-pts st-${t.status}">${STATUS_LABEL[t.status]}</span></td>
+      <td class="nowrap"><span class="outcome st-${t.status}">${OUTCOME_LABEL[t.status]||"–"}</span></td>
       <td>${esc(t.spieltag||"")}</td>
       <td><b>${esc(t.home_team)}</b> – <b>${esc(t.away_team)}</b></td>
       <td class="nowrap"><span class="score tip">${t.home_tip}:${t.away_tip}</span></td>
-      <td class="nowrap">${t.home_result==null?'<span class="meta">offen</span>':`<span class="score res ${t.status==='miss'?'':''}">${t.home_result}:${t.away_result}</span>`}</td>
-      <td><span class="badge ${t.strategy}">${t.strategy}</span></td>
-      <td class="caret">${why?'💬 <span class="caret">▾</span>':''}</td>
+      <td class="nowrap">${t.home_result==null?'<span class="meta">offen</span>':`<span class="score res-${t.status}">${t.home_result}:${t.away_result}</span>`}</td>
+      <td class="caret">${t.reasoning?'💬 <span class="caret">▾</span>':''}</td>
     </tr>`;
-    const whyRow = t.reasoning ? `<tr class="why-row" data-why="${i}" style="display:none"><td colspan="7">
+    const whyRow = t.reasoning ? `<tr class="why-row" data-why="${i}" style="display:none"><td colspan="6">
       <div class="why-run">Lauf ${esc(t.reasoning_run||"")}</div><div class="why">${esc(t.reasoning)}</div></td></tr>` : "";
     return main + whyRow;
   }).join("");
   document.getElementById("tipsPanel").innerHTML = `
     <table class="tips"><thead><tr>
-      <th>Pkt</th><th>Spieltag</th><th>Begegnung</th><th>Tipp</th><th>Ergebnis</th><th>Strat.</th><th></th>
+      <th>Ausgang</th><th>Spieltag</th><th>Begegnung</th><th>Tipp</th><th>Ergebnis</th><th></th>
     </tr></thead><tbody>${rows}</tbody></table>`;
   document.querySelectorAll("table.tips tr.has-why").forEach(tr => {
     tr.onclick = () => {

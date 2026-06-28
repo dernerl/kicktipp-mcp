@@ -25,11 +25,10 @@ visualises the results — a match-by-match position-over-time chart, the whole
 community's "craziest" tips, and a personal section. See
 [Dashboard](#dashboard-localhost).
 
-> **Scoring note:** this Tipprunde uses non-standard points (4 exact / 3 goal
-> difference / 2 tendency, incl. non-exact draws / 0 wrong), not the usual 3/2/1.
-> The bot's own point tracking (`tracking._points`) still computes 3/2/1 — so the
-> figures in *Performance tracking* and the dashboard's personal section are on the
-> standard scheme, not the live Kicktipp points. Tracked in `tasks/todo-punktesystem.md`.
+> **Scoring:** this Tipprunde uses **4 / 3 / 2 / 0** — not the standard Kicktipp
+> 3 / 2 / 1. Exact score = 4, right goal-difference (non-draw) = 3, right tendency
+> (incl. non-exact draws) = 2, wrong tendency = 0. `tracking._points` and the
+> dashboard's personal section both use this scheme.
 
 ## Requirements
 
@@ -109,10 +108,10 @@ tail -f ~/Library/Logs/kicktipp-ai.log
 Every submitted tip is appended to `data/tips_history.jsonl` with a `strategy`
 label (`random` or `llm`). On each run, `update_scores()` (`tracking.py`)
 fetches the by-then-completed match results from Kicktipp and fills in the
-real result + points for any tip whose match has since finished, using the
-standard Kicktipp scoring (3 pts exact score, 2 pts correct goal difference,
-1 pt correct tendency, 0 pts wrong tendency). The log then prints a running
-average per strategy, e.g.:
+real result + points for any tip whose match has since finished, using this
+Tipprunde's actual scoring: **4 pts exact score, 3 pts correct goal-difference
+(non-draw), 2 pts correct tendency (incl. non-exact draws), 0 pts wrong**.
+The log then prints a running average per strategy, e.g.:
 
 ```
 Scored 6 newly completed match(es).
@@ -164,9 +163,10 @@ It has three parts:
   big wrong tips on results that shocked the field rank as the worst misses (red).
   Each card shows how rare it was (e.g. "nur 1/12 exakt"). Classified by
   tip-vs-result, independent of the community's (non-standard) points scheme.
-- **Persönlicher Bereich** — every bot tip, whether it came true (3/2/1/0), the
-  `llm`-vs-`random` average, and an expandable **„Warum?"** panel showing the
-  Claude reasoning parsed from the launchd log.
+- **Persönlicher Bereich** — every bot tip, newest first, with an outcome label and
+  the result colour-coded by how the tip fared (exact/diff/tendency/miss). Up top:
+  current rank, total points, and hit-rate. Each `llm` tip has an expandable
+  **„Warum?"** panel showing the Claude reasoning parsed from the launchd log.
 
 The “↻ Tabelle aktualisieren” button re-runs the scrape live. The server is
 stdlib-only (`http.server`) and binds to localhost.

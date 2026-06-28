@@ -12,12 +12,12 @@ Kicktipp football-tipping bot with two entry points plus a results dashboard:
 
 ## Gotchas (Claude will get these wrong otherwise)
 
-- **Non-standard scoring.** This community scores **4 = exact, 3 = correct goal
-  difference (non-draw), 2 = correct tendency (incl. a non-exact draw), 0 = wrong** —
-  NOT the standard Kicktipp 3/2/1. `tracking._points` still computes the standard
-  3/2/1, so the points/averages in `tips_history.jsonl` and the dashboard's
-  personal section are currently off. Known, tracked in `tasks/todo-punktesystem.md`.
-  The dashboard's *Verrückte Tipps* classify by tip-vs-result, so they're unaffected.
+- **Non-standard scoring (4/3/2/0).** This community scores **4 = exact, 3 = correct
+  goal difference (non-draw), 2 = correct tendency (incl. a non-exact draw), 0 = wrong** —
+  NOT the standard Kicktipp 3/2/1. `tracking._points` implements this scheme
+  (verified 1:1 against the live cell points in `community_tips.jsonl`). Tip-outcome
+  classification (`dashboard._enrich_tip` `status`, and *Verrückte Tipps*) is done by
+  tip-vs-result, so it's correct regardless of the point values. See ADR 0005.
 - **Bookmaker odds only exist pre-kickoff.** Kicktipp shows 1/X/2 odds only on the
   Tippabgabe page for upcoming matches and never retroactively. `odds_history.py`
   snapshots them forward-only (upsert per match); past-match odds can't be backfilled.
