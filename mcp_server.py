@@ -76,6 +76,18 @@ class OpenMatch(BaseModel):
     home_team: str
     away_team: str
     kickoff: str | None = Field(description="ISO-8601 kickoff time, or null if unknown")
+    odds_home: float | None = Field(
+        default=None,
+        description="Bookmaker odds for '1' (home win); null if no odds available",
+    )
+    odds_draw: float | None = Field(
+        default=None,
+        description="Bookmaker odds for 'X' (draw); null if no odds available",
+    )
+    odds_away: float | None = Field(
+        default=None,
+        description="Bookmaker odds for '2' (away win); null if no odds available",
+    )
 
 
 class SubmittedTip(BaseModel):
@@ -130,7 +142,8 @@ def list_open_matches() -> list[OpenMatch]:
     """List kicktipp matches that still need a tip and have not kicked off yet.
 
     Fetches all Spieltage.  Returns each match with an `index` and `spieltag`
-    label.  Pass the `index` to `submit_tips` to add a tip.
+    label, plus bookmaker odds (`odds_home`/`odds_draw`/`odds_away` for 1/X/2)
+    when kicktipp shows them.  Pass the `index` to `submit_tips` to add a tip.
     Matches already tipped or already started are excluded.
     """
     client = _client()
@@ -146,6 +159,9 @@ def list_open_matches() -> list[OpenMatch]:
                 home_team=m.home_team,
                 away_team=m.away_team,
                 kickoff=m.kickoff.isoformat() if m.kickoff else None,
+                odds_home=m.odds_home,
+                odds_draw=m.odds_draw,
+                odds_away=m.odds_away,
             ))
     return out
 

@@ -1,0 +1,512 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kicktipp Dashboard</title>
+<style>
+  :root {
+    --bg: #0f1419; --panel: #1a212b; --panel2: #222c38; --line: #2c3744;
+    --text: #e6edf3; --muted: #8b98a5; --accent: #f5c542; --self: #f5c542;
+    --green: #3fb950; --green-dim: #1d3326; --red: #f85149; --red-dim: #3a1f1f;
+    --blue: #58a6ff; --amber: #e3a008;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  }
+  header {
+    padding: 22px 28px; border-bottom: 1px solid var(--line);
+    display: flex; align-items: baseline; gap: 16px; flex-wrap: wrap;
+  }
+  header h1 { margin: 0; font-size: 22px; }
+  header .sub { color: var(--muted); font-size: 14px; }
+  header .spacer { flex: 1; }
+  button.ghost {
+    background: var(--panel2); color: var(--text); border: 1px solid var(--line);
+    padding: 7px 14px; border-radius: 8px; cursor: pointer; font-size: 13px;
+  }
+  button.ghost:hover { border-color: var(--accent); }
+  main { max-width: 1180px; margin: 0 auto; padding: 24px 28px 80px; }
+  section { margin-bottom: 44px; }
+  h2 { font-size: 17px; margin: 0 0 4px; }
+  .section-hint { color: var(--muted); font-size: 13px; margin: 0 0 16px; }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 20px; }
+
+  /* --- Bump chart --- */
+  .chart-wrap { display: grid; grid-template-columns: 1fr 250px; gap: 20px; }
+  @media (max-width: 880px) { .chart-wrap { grid-template-columns: 1fr; } }
+  svg { width: 100%; height: auto; display: block; }
+  .bump-line { fill: none; stroke-width: 2.5; opacity: .35; transition: opacity .2s; stroke-linejoin: round; stroke-linecap: round; }
+  .bump-line.self { stroke: var(--self); stroke-width: 4; opacity: 1; }
+  .bump-line.hi { opacity: 1; stroke-width: 3.5; }
+  .bump-dot { transition: opacity .2s; }
+  .axis-label { fill: var(--muted); font-size: 11px; }
+  .grid { stroke: var(--line); stroke-width: 1; opacity: .5; }
+  .marker-line { stroke: var(--accent); stroke-width: 1.5; stroke-dasharray: 4 4; opacity: .6; }
+
+  .controls { display: flex; align-items: center; gap: 14px; margin-top: 16px; }
+  .controls input[type=range] { flex: 1; accent-color: var(--accent); }
+  .controls .st-label { font-weight: 600; min-width: 96px; }
+  .play-btn {
+    width: 38px; height: 38px; border-radius: 50%; border: 1px solid var(--line);
+    background: var(--panel2); color: var(--text); cursor: pointer; font-size: 15px;
+  }
+  .play-btn:hover { border-color: var(--accent); }
+  .bonus-toggle { display: inline-flex; align-items: center; gap: 7px; margin-top: 12px; color: var(--muted); font-size: 13px; cursor: pointer; user-select: none; }
+  .bonus-toggle input { accent-color: var(--accent); cursor: pointer; }
+
+  .standings { font-size: 13.5px; }
+  .standings .row { display: flex; align-items: center; gap: 8px; padding: 4px 6px; border-radius: 6px; }
+  .standings .row.self { background: rgba(245,197,66,.14); }
+  .standings .pos { width: 22px; text-align: right; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .standings .swatch { width: 9px; height: 9px; border-radius: 2px; flex: none; }
+  .standings .nm { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .standings .pts { color: var(--muted); font-variant-numeric: tabular-nums; }
+  .standings .mv { width: 26px; font-size: 11px; text-align: right; }
+  .mv.up { color: var(--green); } .mv.down { color: var(--red); } .mv.same { color: var(--muted); }
+
+  /* --- Crazy tips --- */
+  .crazy-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  @media (max-width: 760px) { .crazy-grid { grid-template-columns: 1fr; } }
+  .crazy-col h3 { font-size: 14px; margin: 0 0 12px; display: flex; align-items: center; gap: 8px; }
+  .tipcard {
+    border: 1px solid var(--line); border-radius: 10px; padding: 11px 13px; margin-bottom: 10px;
+    display: flex; align-items: center; gap: 12px; background: var(--panel2);
+  }
+  .tipcard.exact { border-left: 4px solid var(--green); }
+  .tipcard.miss  { border-left: 4px solid var(--red); }
+  .tipcard .teams { flex: 1; font-size: 13.5px; }
+  .tipcard .teams b { font-weight: 600; }
+  .tipcard .meta { color: var(--muted); font-size: 12px; }
+  .score { font-variant-numeric: tabular-nums; font-weight: 700; padding: 2px 8px; border-radius: 6px; }
+  .score.tip { background: var(--panel); border: 1px solid var(--line); }
+  .score.res { background: var(--green-dim); color: var(--green); }
+  .tipcard.miss .score.res { background: var(--red-dim); color: var(--red); }
+  .badge { font-size: 11px; padding: 2px 7px; border-radius: 20px; border: 1px solid var(--line); color: var(--muted); }
+  .badge.llm { color: var(--blue); border-color: var(--blue); }
+  .badge.random { color: var(--amber); border-color: var(--amber); }
+  .who { font-weight: 600; color: var(--text); }
+  .who.self { color: var(--self); }
+  .rare { color: var(--accent); font-weight: 600; }
+
+  /* --- Personal --- */
+  .stats { display: flex; gap: 14px; flex-wrap: wrap; margin-bottom: 18px; }
+  .stat { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px 18px; min-width: 150px; }
+  .stat .k { color: var(--muted); font-size: 12px; }
+  .stat .v { font-size: 24px; font-weight: 700; margin-top: 2px; }
+  .stat .v small { font-size: 13px; color: var(--muted); font-weight: 400; }
+  .filters { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
+  .filters button {
+    background: var(--panel); border: 1px solid var(--line); color: var(--muted);
+    padding: 6px 14px; border-radius: 20px; cursor: pointer; font-size: 13px;
+  }
+  .filters button.active { color: var(--text); border-color: var(--accent); background: var(--panel2); }
+
+  table.tips { width: 100%; border-collapse: collapse; }
+  table.tips th { text-align: left; color: var(--muted); font-weight: 500; font-size: 12px; padding: 6px 8px; border-bottom: 1px solid var(--line); }
+  table.tips td { padding: 9px 8px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+  table.tips tr.has-why { cursor: pointer; }
+  table.tips tr.has-why:hover td { background: var(--panel2); }
+  .st-pts { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 6px; font-weight: 700; font-size: 13px; }
+  .st-exact { background: var(--green-dim); color: var(--green); }
+  .st-diff { background: #2a3a4d; color: var(--blue); }
+  .st-tendency { background: #3a3320; color: var(--amber); }
+  .st-miss { background: var(--red-dim); color: var(--red); }
+  .st-open { background: var(--panel2); color: var(--muted); }
+  .why-row td { background: #131922; }
+  .why { white-space: pre-wrap; font-size: 13px; color: var(--text); line-height: 1.55; padding: 6px 4px; max-height: 360px; overflow: auto; }
+  .why-run { color: var(--muted); font-size: 11.5px; margin-bottom: 8px; }
+  .caret { color: var(--muted); font-size: 11px; }
+  .nowrap { white-space: nowrap; }
+  .loading { color: var(--muted); padding: 40px; text-align: center; }
+</style>
+</head>
+<body>
+<header>
+  <h1>⚽ Kicktipp Dashboard</h1>
+  <span class="sub" id="subtitle">lädt …</span>
+  <span class="spacer"></span>
+  <button class="ghost" id="refresh">↻ Tabelle aktualisieren</button>
+</header>
+<main id="app"><div class="loading">Lade Daten …</div></main>
+
+<script>
+const PALETTE = ["#58a6ff","#3fb950","#db61a2","#e3a008","#a371f7","#ff7b72",
+                 "#56d4dd","#d2a8ff","#7ee787","#ffa657","#79c0ff","#f0883e"];
+
+let DATA = null;
+let rafId = null, lastT = null;
+
+async function load() {
+  const r = await fetch("/api/data");
+  DATA = await r.json();
+  render();
+}
+
+function render() {
+  const app = document.getElementById("app");
+  app.innerHTML = "";
+  const self = (DATA.ranking_history.find(r => r.is_self) || {}).player || "du";
+  document.getElementById("subtitle").textContent =
+    `${DATA.tips.length} Tipps · Community „${self}“`;
+  app.appendChild(sectionBump());
+  app.appendChild(sectionCrazy());
+  app.appendChild(sectionPersonal());
+  initBump();
+}
+
+/* ---------------- Section A: position over time ---------------- */
+function sectionBump() {
+  const sec = el("section");
+  sec.innerHTML = `
+    <h2>Positionsverlauf</h2>
+    <p class="section-hint">Wer stand wann auf welchem Platz? Ein Schritt = ein einzelnes Spiel (Start = Bonusfragen). Schieberegler ziehen oder ▶ drücken.</p>
+    <div class="panel">
+      <div class="chart-wrap">
+        <div>
+          <svg id="bump" viewBox="0 0 720 420" preserveAspectRatio="xMidYMid meet"></svg>
+          <div class="controls">
+            <button class="play-btn" id="play">▶</button>
+            <input type="range" id="slider" min="1" max="1" value="1" step="1">
+            <span class="st-label" id="stLabel"></span>
+          </div>
+          <label class="bonus-toggle"><input type="checkbox" id="bonusToggle" checked> Bonusfragen einrechnen</label>
+        </div>
+        <div class="standings" id="standings"></div>
+      </div>
+    </div>`;
+  return sec;
+}
+
+// smooth S-curve path through points: horizontal-tangent cubic beziers, so the
+// line flows between ranks without overshooting above/below either endpoint.
+function smoothPath(pts) {
+  if (!pts.length) return "";
+  let d = `M ${pts[0].x},${pts[0].y}`;
+  for (let i=1; i<pts.length; i++) {
+    const xm = (pts[i-1].x + pts[i].x) / 2;
+    d += ` C ${xm},${pts[i-1].y} ${xm},${pts[i].y} ${pts[i].x},${pts[i].y}`;
+  }
+  return d;
+}
+
+// standard competition ranking (1,2,2,4) by points desc, ties stable by name
+function competitionRank(arr) {
+  arr.forEach(s => s.rank = 1 + arr.filter(o => o.points > s.points).length);
+  return arr.sort((a,b) => a.rank - b.rank || a.player.localeCompare(b.player));
+}
+
+function bumpModel(includeBonus) {
+  let tl = DATA.timeline.slice().sort((a,b)=>a.ordinal-b.ordinal);
+  // the Bonusfragen step (spieltag 0) only makes sense when bonus is counted
+  if (!includeBonus) tl = tl.filter(t => t.spieltag_index !== 0);
+  // recompute each step's standings for the chosen mode (with/without bonus)
+  const steps = tl.map(t => {
+    const standings = t.standings.map(s => ({
+      player: s.player, is_self: s.is_self,
+      points: includeBonus ? s.points : (s.points - (s.bonus || 0)),
+    }));
+    competitionRank(standings);
+    return { ...t, standings };
+  });
+  const ords = steps.map(s => s.ordinal);
+  const stepByOrd = {};
+  steps.forEach(s => stepByOrd[s.ordinal] = s);
+  const byPlayer = {};
+  steps.forEach(s => s.standings.forEach(p => {
+    (byPlayer[p.player] = byPlayer[p.player] || {})[s.ordinal] = p;
+  }));
+  const last = steps[steps.length-1];
+  const finalOrder = last.standings.slice().sort((a,b)=>a.rank-b.rank);
+  const players = finalOrder.map(s => s.player);
+  const colorOf = {};
+  finalOrder.forEach((s,i) => colorOf[s.player] = PALETTE[i % PALETTE.length]);
+  const boundaries = [];
+  let prevSt = null;
+  steps.forEach(s => { if (s.spieltag_index !== prevSt) { boundaries.push(s); prevSt = s.spieltag_index; } });
+  const self = (last.standings.find(s => s.is_self) || {}).player;
+  return { timeline: steps, ords, stepByOrd, byPlayer, players, colorOf, boundaries,
+           nplayers: players.length, self, lastOrd: last.ordinal };
+}
+
+let BUMP = null;
+function initBump(keepOrd) {
+  const includeBonus = document.getElementById("bonusToggle").checked;
+  BUMP = bumpModel(includeBonus);
+  const svg = document.getElementById("bump");
+  const W=720, H=420, padL=30, padR=120, padT=18, padB=40;
+  const { ords, players, colorOf, byPlayer, boundaries } = BUMP;
+  const n = BUMP.nplayers, span = Math.max(1, ords.length-1);
+  const xIdx = idx => padL + (W-padL-padR) * idx / span;
+  const x = ord => xIdx(ords.indexOf(ord));
+  const y = rank => padT + (H-padT-padB) * (rank-1)/(n-1);
+  BUMP.x = x; BUMP.xIdx = xIdx; BUMP.y = y; BUMP.svg = svg;
+
+  let h = "";
+  for (let r=1; r<=n; r++) h += `<text class="axis-label" x="6" y="${y(r)+4}">${r}</text>`;
+  // spieltag boundary gridlines + labels (per Spieltag, not per match — too dense;
+  // the Bonus step gets no label so it can't collide with ST1 on the left edge)
+  boundaries.forEach(t => {
+    if (t.spieltag_index === 0) return;
+    h += `<line class="grid" x1="${x(t.ordinal)}" y1="${padT}" x2="${x(t.ordinal)}" y2="${H-padB}"/>`;
+    h += `<text class="axis-label" text-anchor="middle" x="${x(t.ordinal)}" y="${H-8}">ST${t.spieltag_index}</text>`;
+  });
+  h += `<line id="marker" class="marker-line" x1="0" y1="${padT}" x2="0" y2="${H-padB}" style="opacity:0"/>`;
+  players.forEach(p => {
+    const cls = "bump-line" + (p===BUMP.self?" self":"");
+    h += `<path class="${cls}" data-player="${esc(p)}" stroke="${colorOf[p]}" d=""/>`;
+  });
+  // end labels at the last ordinal, nudged apart so tied ranks don't overlap
+  const lastOrd = BUMP.lastOrd, minGap = 13;
+  let prevY = -100;
+  players.forEach(p => {
+    const r = byPlayer[p][lastOrd]; if(!r) return;
+    let yy = y(r.rank) + 4;
+    if (yy - prevY < minGap) yy = prevY + minGap;
+    prevY = yy;
+    const bold = p===BUMP.self ? ' font-weight="700"' : '';
+    h += `<text x="${x(lastOrd)+8}" y="${yy}" fill="${colorOf[p]}" font-size="11"${bold}>${esc(p)}</text>`;
+  });
+  // persistent dots — updated each frame, never rebuilt (smoother animation)
+  h += `<g id="dots">`;
+  players.forEach(p => {
+    const big = p===BUMP.self ? 6 : 4;
+    h += `<circle class="bump-dot" data-player="${esc(p)}" r="${big}" fill="${colorOf[p]}" stroke="#0f1419" stroke-width="1.5" style="opacity:0"/>`;
+  });
+  h += `</g>`;
+  svg.innerHTML = h;
+
+  // cache element refs so render only touches attributes, not innerHTML
+  BUMP.lineEl = {}; BUMP.dotEl = {};
+  svg.querySelectorAll(".bump-line").forEach(pl => {
+    BUMP.lineEl[pl.dataset.player] = pl;
+    pl.addEventListener("mouseenter", () => {
+      svg.querySelectorAll(".bump-line").forEach(o => o.classList.remove("hi"));
+      if(!pl.classList.contains("self")) pl.classList.add("hi");
+    });
+  });
+  svg.querySelectorAll(".bump-dot").forEach(d => BUMP.dotEl[d.dataset.player] = d);
+  BUMP.marker = svg.querySelector("#marker");
+  BUMP._standingsOrd = null;
+
+  const slider = document.getElementById("slider");
+  slider.min = ords[0]; slider.max = lastOrd;
+  const start = (keepOrd != null && ords.includes(keepOrd)) ? keepOrd : lastOrd;
+  slider.value = start;
+  slider.oninput = () => { stopPlay(); renderPos(ords.indexOf(+slider.value)); };
+  document.getElementById("play").onclick = togglePlay;
+  document.getElementById("bonusToggle").onchange = () => { stopPlay(); initBump(+slider.value); };
+  renderPos(ords.indexOf(start));
+}
+
+// render at a fractional position (index into ords) — interpolates rank & x so
+// the play animation glides continuously instead of snapping match to match.
+function renderPos(pos) {
+  const { y, byPlayer, players, ords, stepByOrd, xIdx } = BUMP;
+  const lastIdx = ords.length - 1;
+  pos = Math.max(0, Math.min(lastIdx, pos));
+  BUMP.pos = pos;
+  const i0 = Math.floor(pos), i1 = Math.min(lastIdx, i0 + 1), frac = pos - i0;
+  const xCur = xIdx(i0) + (xIdx(i1) - xIdx(i0)) * frac;
+
+  players.forEach(p => {
+    const pts = [];
+    for (let k = 0; k <= i0; k++) {
+      const s = byPlayer[p][ords[k]];
+      if (s) pts.push({ x: xIdx(k), y: y(s.rank) });
+    }
+    const s0 = byPlayer[p][ords[i0]], s1 = byPlayer[p][ords[i1]];
+    let yCur = null;
+    if (s0 && s1) yCur = y(s0.rank) + (y(s1.rank) - y(s0.rank)) * frac;
+    else if (s0) yCur = y(s0.rank);
+    if (yCur != null && frac > 0) pts.push({ x: xCur, y: yCur });
+    BUMP.lineEl[p].setAttribute("d", smoothPath(pts));
+
+    const dot = BUMP.dotEl[p];
+    if (yCur == null) dot.style.opacity = 0;
+    else { dot.style.opacity = 1; dot.setAttribute("cx", xCur); dot.setAttribute("cy", yCur); }
+  });
+
+  BUMP.marker.setAttribute("x1", xCur);
+  BUMP.marker.setAttribute("x2", xCur);
+  BUMP.marker.style.opacity = .6;
+
+  const near = Math.round(pos), ordNear = ords[near];
+  document.getElementById("stLabel").textContent = stepLabel(stepByOrd[ordNear]);
+  document.getElementById("slider").value = ordNear;
+  if (ordNear !== BUMP._standingsOrd) { drawStandings(ordNear); BUMP._standingsOrd = ordNear; }
+}
+
+function drawAt(ord) { renderPos(BUMP.ords.indexOf(ord)); }
+
+function stepLabel(step) {
+  if (!step || step.spieltag_index === 0) return "Start · Bonusfragen";
+  return `${step.spieltag_index}. Spieltag`;
+}
+
+function drawStandings(ord) {
+  const {colorOf, ords, stepByOrd} = BUMP;
+  const cur = (stepByOrd[ord] || {standings:[]}).standings;
+  const prevOrd = ords.filter(o => o < ord).pop();
+  const prevRank = {};
+  if (prevOrd != null) (stepByOrd[prevOrd].standings||[]).forEach(s => prevRank[s.player] = s.rank);
+  const box = document.getElementById("standings");
+  box.innerHTML = cur.map(r => {
+    let mv = `<span class="mv same">–</span>`;
+    if (r.player in prevRank) {
+      const d = prevRank[r.player] - r.rank;
+      if (d>0) mv = `<span class="mv up">▲${d}</span>`;
+      else if (d<0) mv = `<span class="mv down">▼${-d}</span>`;
+    }
+    return `<div class="row ${r.is_self?'self':''}">
+      <span class="pos">${r.rank}.</span>
+      <span class="swatch" style="background:${colorOf[r.player]}"></span>
+      <span class="nm">${esc(r.player)}</span>
+      <span class="pts">${r.points}</span>${mv}</div>`;
+  }).join("");
+}
+
+const PLAY_SPEED = 7; // steps per second
+function togglePlay() { rafId ? stopPlay() : startPlay(); }
+function startPlay() {
+  document.getElementById("play").textContent = "⏸";
+  const lastIdx = BUMP.ords.length - 1;
+  if (BUMP.pos >= lastIdx) BUMP.pos = 0;   // restart from the beginning
+  lastT = null;
+  const frame = (t) => {
+    if (lastT == null) lastT = t;
+    const dt = Math.min(0.05, (t - lastT) / 1000); lastT = t;
+    const pos = BUMP.pos + PLAY_SPEED * dt;
+    if (pos >= lastIdx) { renderPos(lastIdx); stopPlay(); return; }
+    renderPos(pos);
+    rafId = requestAnimationFrame(frame);
+  };
+  rafId = requestAnimationFrame(frame);
+}
+function stopPlay() {
+  if (rafId) { cancelAnimationFrame(rafId); rafId = null; }
+  document.getElementById("play").textContent = "▶";
+}
+
+/* ---------------- Section B: crazy tips (whole community) ---------------- */
+function sectionCrazy() {
+  const sec = el("section");
+  const exact = (DATA.crazy.exact || []).slice(0,6);
+  const miss  = (DATA.crazy.miss  || []).slice(0,6);
+  sec.innerHTML = `
+    <h2>Verrückte Tipps</h2>
+    <p class="section-hint">Bewertet gegen den Tippkreis (= die Quote): exakte Treffer, die kaum jemand sonst hatte und gegen das Feld gingen (gold) — und krasse Fehlschüsse auf Ergebnisse, die fast alle schockten (rot).</p>
+    <div class="panel"><div class="crazy-grid">
+      <div class="crazy-col"><h3>🏆 Wahnsinns-Treffer</h3>${exact.map(crazyCard).join("") || emptyNote}</div>
+      <div class="crazy-col"><h3>💥 Komplett daneben</h3>${miss.map(crazyCard).join("") || emptyNote}</div>
+    </div></div>`;
+  return sec;
+}
+const emptyNote = `<p class="section-hint">Noch nichts.</p>`;
+function crazyCard(t) {
+  const who = `<span class="who${t.is_self?' self':''}">${esc(t.player)}</span>`;
+  const rare = t.status === "exact"
+    ? `nur ${t.n_exact}/${t.n_players} exakt`
+    : `${t.n_tend}/${t.n_players} Tendenz`;
+  return `<div class="tipcard ${t.status}">
+    <div class="teams">
+      <div>${who} · <b>${esc(t.home)}</b> vs <b>${esc(t.away)}</b></div>
+      <div class="meta">${esc(t.spieltag_label)} · <span class="rare">${rare}</span></div>
+    </div>
+    <span class="score tip">${t.home_tip}:${t.away_tip}</span>
+    <span class="meta">→</span>
+    <span class="score res">${t.home_goals}:${t.away_goals}</span>
+  </div>`;
+}
+
+/* ---------------- Section C: personal ---------------- */
+let pFilter = "all";
+function sectionPersonal() {
+  const sec = el("section");
+  sec.innerHTML = `
+    <h2>Persönlicher Bereich</h2>
+    <p class="section-hint">Alle Tipps des Bots und ob sie eingetroffen sind. Zeilen mit 💬 aufklappen für Claudes Begründung.</p>
+    <div class="stats" id="stats"></div>
+    <div class="filters" id="filters"></div>
+    <div class="panel" id="tipsPanel"></div>`;
+  setTimeout(() => { renderStats(); renderFilters(); renderTipsTable(); }, 0);
+  return sec;
+}
+
+function renderStats() {
+  const s = DATA.summary;
+  const last = DATA.standings_timeline[DATA.standings_timeline.length-1];
+  const selfRank = (() => {
+    const rows = DATA.ranking_history.filter(r=>r.is_self);
+    return rows.length ? rows[rows.length-1] : null;
+  })();
+  const cards = [];
+  if (selfRank) cards.push(stat("Aktueller Platz", `${selfRank.rank}.`, `${selfRank.points} Pkt`));
+  if (s.llm) cards.push(stat("Ø llm", s.llm.avg, `${s.llm.points} Pkt / ${s.llm.matches}`));
+  if (s.random) cards.push(stat("Ø random", s.random.avg, `${s.random.points} Pkt / ${s.random.matches}`));
+  if (s.llm && s.random) {
+    const better = s.llm.avg >= s.random.avg ? "llm" : "random";
+    cards.push(stat("Beste Strategie", better, `+${Math.abs(s.llm.avg-s.random.avg).toFixed(2)} Ø`));
+  }
+  document.getElementById("stats").innerHTML = cards.join("");
+}
+function stat(k,v,sub){ return `<div class="stat"><div class="k">${k}</div><div class="v">${v} <small>${sub||""}</small></div></div>`; }
+
+function renderFilters() {
+  const opts = [["all","Alle"],["llm","llm"],["random","random"]];
+  document.getElementById("filters").innerHTML = opts.map(([k,l])=>
+    `<button data-f="${k}" class="${pFilter===k?'active':''}">${l}</button>`).join("");
+  document.querySelectorAll("#filters button").forEach(b =>
+    b.onclick = () => { pFilter = b.dataset.f; renderFilters(); renderTipsTable(); });
+}
+
+const STATUS_LABEL = { exact:"3", diff:"2", tendency:"1", miss:"0", open:"–" };
+function renderTipsTable() {
+  let tips = DATA.tips.slice();
+  if (pFilter!=="all") tips = tips.filter(t=>t.strategy===pFilter);
+  // newest first: by kickoff desc, fallback timestamp
+  tips.sort((a,b)=> (b.kickoff||b.timestamp||"").localeCompare(a.kickoff||a.timestamp||""));
+  const rows = tips.map((t,i) => {
+    const why = t.reasoning ? "💬" : "";
+    const cls = t.reasoning ? "has-why" : "";
+    const main = `<tr class="${cls}" data-i="${i}">
+      <td class="nowrap"><span class="st-pts st-${t.status}">${STATUS_LABEL[t.status]}</span></td>
+      <td>${esc(t.spieltag||"")}</td>
+      <td><b>${esc(t.home_team)}</b> – <b>${esc(t.away_team)}</b></td>
+      <td class="nowrap"><span class="score tip">${t.home_tip}:${t.away_tip}</span></td>
+      <td class="nowrap">${t.home_result==null?'<span class="meta">offen</span>':`<span class="score res ${t.status==='miss'?'':''}">${t.home_result}:${t.away_result}</span>`}</td>
+      <td><span class="badge ${t.strategy}">${t.strategy}</span></td>
+      <td class="caret">${why?'💬 <span class="caret">▾</span>':''}</td>
+    </tr>`;
+    const whyRow = t.reasoning ? `<tr class="why-row" data-why="${i}" style="display:none"><td colspan="7">
+      <div class="why-run">Lauf ${esc(t.reasoning_run||"")}</div><div class="why">${esc(t.reasoning)}</div></td></tr>` : "";
+    return main + whyRow;
+  }).join("");
+  document.getElementById("tipsPanel").innerHTML = `
+    <table class="tips"><thead><tr>
+      <th>Pkt</th><th>Spieltag</th><th>Begegnung</th><th>Tipp</th><th>Ergebnis</th><th>Strat.</th><th></th>
+    </tr></thead><tbody>${rows}</tbody></table>`;
+  document.querySelectorAll("table.tips tr.has-why").forEach(tr => {
+    tr.onclick = () => {
+      const w = document.querySelector(`tr.why-row[data-why="${tr.dataset.i}"]`);
+      if (w) w.style.display = w.style.display==="none" ? "table-row" : "none";
+    };
+  });
+}
+
+/* ---------------- helpers ---------------- */
+function el(t){ return document.createElement(t); }
+function esc(s){ return String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+document.getElementById("refresh").onclick = async (e) => {
+  const btn = e.target; btn.disabled = true; btn.textContent = "↻ aktualisiere …";
+  try { await fetch("/api/refresh"); await load(); }
+  finally { btn.disabled = false; btn.textContent = "↻ Tabelle aktualisieren"; }
+};
+
+load();
+</script>
+</body>
+</html>

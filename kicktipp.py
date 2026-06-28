@@ -79,6 +79,31 @@ class RankingEntry:
 
 
 @dataclass
+class PlayerSpieltag:
+    """One player's row in a Spieltag's Tippübersicht.
+
+    `total` is the cumulative Gesamtpunkte after this Spieltag; `per_match` are
+    the points earned in each individual match (column order = chronological),
+    which is what lets the dashboard step the standings forward match-by-match
+    rather than only once per Spieltag.
+    """
+    player: str
+    rank: int
+    total: int
+    is_self: bool
+    per_match: list[int]                      # points per match (chronological)
+    per_match_tips: list[tuple[int, int] | None]  # the (home, away) tip per match
+
+
+@dataclass
+class SpieltagDetail:
+    spieltag_index: int
+    spieltag_label: str
+    matches: list[dict]          # [{home, away, home_goals, away_goals}], chronological
+    players: list[PlayerSpieltag]
+
+
+@dataclass
 class BonusSelect:
     name: str                   # form field name of the <select>
     options: dict[str, str]     # option text → option value (excludes "not tipped")
@@ -222,6 +247,32 @@ class KicktippClient:
         resp = self.session.get(url, timeout=15)
         resp.raise_for_status()
         return parse_ranking(resp.text)
+
+    def fetch_spieltag_details(self) -> list[SpieltagDetail]:
+        """Per-Spieltag breakdown for every completed Spieltag.
+
+        Each Tippübersicht page carries, per player, both the cumulative
+        Gesamtpunkte and the points earned in each individual match — enough to
+        reconstruct the standings after any single match.  The Gesamtübersicht
+        can't be used (its spieltagIndex param is ignored).  Future Spieltage
+        without results are skipped.
+        """
+        url = f"{BASE_URL}/{self.community}/tippuebersicht"
+        resp = self.session.get(url, timeout=15)
+        resp.raise_for_status()
+
+        details: list[SpieltagDetail] = []
+        for st_idx, label, tsid in _parse_spieltag_links(resp.text):
+            r = self.session.get(
+                url,
+                params={"spieltagIndex": st_idx, "tippsaisonId": tsid},
+                timeout=15,
+            )
+            r.raise_for_status()
+            if not _spieltag_has_results(r.text):
+                continue
+            details.append(parse_spieltag_detail(r.text, st_idx, label))
+        return details
 
     def fetch_bonus_page(self) -> BonusPage | None:
         """Fetch the bonus-question page.  Returns None if there are no questions."""
@@ -555,6 +606,108 @@ def parse_ranking(html: str) -> list[RankingEntry]:
         )
 
     return entries
+
+
+def _spieltag_has_results(html: str) -> bool:
+    """True if the Spieltag's match table already has at least one final score."""
+    soup = BeautifulSoup(html, "html.parser")
+    table = soup.find("table", id="spielplanSpiele")
+    if table is None:
+        return False
+    for row in table.find_all("tr"):
+        cells = [c.get_text(strip=True) for c in row.find_all("td")]
+        if cells and re.match(r"^\d+:\d+$", cells[-1]):
+            return True
+    return False
+
+
+def _parse_spieltag_matches(soup: BeautifulSoup) -> list[dict]:
+    """Match list (chronological) from the spielplanSpiele table."""
+    matches: list[dict] = []
+    table = soup.find("table", id="spielplanSpiele")
+    if table is None:
+        return matches
+    for row in table.find_all("tr"):
+        tds = row.find_all("td")
+        if len(tds) < 5:
+            continue
+        cells = [c.get_text(strip=True) for c in tds]
+        home, away, result = cells[1], cells[2], cells[-1]
+        m = re.match(r"^(\d+):(\d+)$", result)
+        hg, ag = (int(m.group(1)), int(m.group(2))) if m else (None, None)
+        matches.append({"home": home, "away": away, "home_goals": hg, "away_goals": ag})
+    return matches
+
+
+def parse_spieltag_detail(
+    html: str, spieltag_index: int, spieltag_label: str
+) -> SpieltagDetail:
+    """Parse a per-Spieltag Tippübersicht into match list + per-player points.
+
+    The ranking table (id="ranking") has a column per match whose cell looks
+    like ``<td class="… ereignisN">2:0<sub class="p">2</sub></td>`` — the score
+    is the tip, the <sub class="p"> the points earned (absent → 0 points).  The
+    Gesamtpunkte cell (class "gesamtpunkte") gives the cumulative total.
+    """
+    soup = BeautifulSoup(html, "html.parser")
+    matches = _parse_spieltag_matches(soup)
+    n = len(matches)
+
+    table = soup.find("table", id="ranking")
+    players: list[PlayerSpieltag] = []
+    if table is not None:
+        for row in table.find_all("tr"):
+            tds = row.find_all("td")
+            if len(tds) < 3:
+                continue
+            rank_text = tds[0].get_text(strip=True).rstrip(".")
+            if not rank_text.isdigit():
+                continue
+
+            name_cell = row.find("td", class_="mg_class") or tds[2]
+            player = name_cell.get_text(strip=True)
+            if not player:
+                continue
+
+            per_match = [0] * n
+            per_match_tips: list[tuple[int, int] | None] = [None] * n
+            for td in tds:
+                for cls in (td.get("class") or []):
+                    if cls.startswith("ereignis") and cls != "ereignis":
+                        try:
+                            i = int(cls[len("ereignis"):])
+                        except ValueError:
+                            continue
+                        if 0 <= i < n:
+                            sub = td.find("sub", class_="p")
+                            txt = sub.get_text(strip=True) if sub else ""
+                            per_match[i] = int(txt) if txt.isdigit() else 0
+                            # the tip is the first text node of the cell ("2:0"),
+                            # the points live in the trailing <sub class="p">
+                            first = td.find(string=True)
+                            mt = re.match(r"\s*(\d+):(\d+)", first) if first else None
+                            if mt:
+                                per_match_tips[i] = (int(mt.group(1)), int(mt.group(2)))
+
+            total_cell = row.find("td", class_="gesamtpunkte")
+            total_text = (total_cell or tds[-1]).get_text(strip=True).replace(".", "")
+            try:
+                total = int(total_text)
+            except ValueError:
+                continue
+
+            is_self = "treffer" in (row.get("class") or [])
+            players.append(PlayerSpieltag(
+                player=player, rank=int(rank_text), total=total,
+                is_self=is_self, per_match=per_match, per_match_tips=per_match_tips,
+            ))
+
+    return SpieltagDetail(
+        spieltag_index=spieltag_index,
+        spieltag_label=spieltag_label,
+        matches=matches,
+        players=players,
+    )
 
 
 def parse_past_results(html: str, spieltag_label: str) -> list[PastResult]:

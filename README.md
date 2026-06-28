@@ -11,7 +11,7 @@ Automated [Kicktipp](https://www.kicktipp.de/) football tipping. Ships in two fl
 
 The MCP server (`mcp_server.py`) provides three tools:
 
-- `list_open_matches` — matches that still need a tip (not yet kicked off, not already tipped)
+- `list_open_matches` — matches that still need a tip (not yet kicked off, not already tipped), including bookmaker odds (1/X/2) when Kicktipp shows them
 - `list_submitted_tips` — tips you've already submitted
 - `submit_tips` — post predicted home/away scores
 
@@ -19,6 +19,17 @@ The CLI bot (`main.py`) supports two strategies:
 
 - `random` — weighted Poisson scoreline sampling
 - `llm` — shells out to the Claude Code CLI (`claude -p`) to predict scores with web search; automatically fetches all completed match results from Kicktipp and injects team form (goals, W/D/L, points) into the prompt as tournament context
+
+The **dashboard** (`dashboard.py`) is a local, zero-dependency web page that
+visualises the results — a match-by-match position-over-time chart, the whole
+community's "craziest" tips, and a personal section. See
+[Dashboard](#dashboard-localhost).
+
+> **Scoring note:** this Tipprunde uses non-standard points (4 exact / 3 goal
+> difference / 2 tendency, incl. non-exact draws / 0 wrong), not the usual 3/2/1.
+> The bot's own point tracking (`tracking._points`) still computes 3/2/1 — so the
+> figures in *Performance tracking* and the dashboard's personal section are on the
+> standard scheme, not the live Kicktipp points. Tracked in `tasks/todo-punktesystem.md`.
 
 ## Requirements
 
@@ -118,6 +129,48 @@ injury news, form) is printed to the log right before the final JSON tips —
 only the parsed scores get persisted to `tips_history.jsonl`, so the log is
 the only place to audit *why* a pick was made.
 
+Each run also snapshots the bookmaker odds (1/X/2) of every still-open match
+into `data/odds_history.jsonl` (`odds_history.py`). Kicktipp only exposes odds
+*before* kickoff and never retroactively, so this is forward-only: while a match
+stays open its row is upserted (overwritten) with the latest odds, leaving the
+final stored value as close to kickoff as the last run before it started. This
+runs independently of `--dry-run` and is best-effort — a failure here never
+aborts the bot run.
+
+### Dashboard (localhost)
+
+A zero-dependency local web page that visualises the results:
+
+```bash
+# 1. Reconstruct the community standings history (logs in, scrapes once)
+uv run python ranking_history.py        # writes data/ranking_history.jsonl
+
+# 2. Serve the dashboard
+uv run python dashboard.py              # opens http://localhost:8765
+```
+
+It has three parts:
+
+- **Positionsverlauf** — a bump chart of all community members' rank, with a
+  slider/▶ to scrub through the season. Each step is a *single match* (not just a
+  whole Spieltag): Kicktipp doesn't store historical standings, so this is
+  reconstructed retroactively from each Tippübersicht's per-match point columns
+  (`<sub class="p">`), accumulated match-by-match. A *Bonusfragen* toggle counts
+  the pre-tournament bonus points in or out — with them out you see pure tipping
+  rank.
+- **Verrückte Tipps** — the *whole community's* tips (all players, not just the
+  bot), judged *against the field*: the crowd is the odds. An exact hit almost
+  nobody else managed — on a result most players got wrong — ranks highest (gold);
+  big wrong tips on results that shocked the field rank as the worst misses (red).
+  Each card shows how rare it was (e.g. "nur 1/12 exakt"). Classified by
+  tip-vs-result, independent of the community's (non-standard) points scheme.
+- **Persönlicher Bereich** — every bot tip, whether it came true (3/2/1/0), the
+  `llm`-vs-`random` average, and an expandable **„Warum?"** panel showing the
+  Claude reasoning parsed from the launchd log.
+
+The “↻ Tabelle aktualisieren” button re-runs the scrape live. The server is
+stdlib-only (`http.server`) and binds to localhost.
+
 ### MCP server (Claude Desktop)
 
 1. Edit `claude_desktop_config.example.json` and replace the placeholder path
@@ -137,6 +190,11 @@ You can then ask Claude to list open matches and submit tips for you.
 | `main.py` | CLI entry point for the bot |
 | `strategies.py` | Tipping strategies (random / llm) |
 | `tracking.py` | Tip history + score tracking (`data/tips_history.jsonl`) |
+| `odds_history.py` | Forward-only bookmaker-odds snapshots, upserted per match each run (`data/odds_history.jsonl`) |
+| `ranking_history.py` | Reconstructs standings (per Spieltag + per match) and every player's tips (`data/ranking_history.jsonl`, `ranking_steps.jsonl`, `community_tips.jsonl`) |
+| `logparse.py` | Extracts llm reasoning + own-rank timeline from the launchd log |
+| `dashboard.py` | Stdlib `http.server` serving the localhost results dashboard |
+| `web/dashboard.html` | The dashboard UI (vanilla JS + SVG, no build step) |
 | `run-mcp.sh` | Launcher Claude Desktop uses for the MCP server |
 | `run.sh` | Launcher the launchd job uses for the CLI bot |
 

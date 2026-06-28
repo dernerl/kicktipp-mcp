@@ -4,6 +4,7 @@
 
 # Claude Code local settings (machine-specific)
 .claude/settings.local.json
+CLAUDE.local.md
 
 # Python
 __pycache__/

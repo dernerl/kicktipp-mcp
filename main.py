@@ -10,7 +10,14 @@ from datetime import datetime, timedelta
 import requests
 from dotenv import load_dotenv
 
-from kicktipp import KicktippClient, LoginFailed, assign_global_indices, tippable_matches
+from kicktipp import (
+    KicktippClient,
+    LoginFailed,
+    assign_global_indices,
+    editable_matches,
+    tippable_matches,
+)
+from odds_history import record_odds
 from strategies import llm_tips, weighted_random_tip
 from tracking import record_tips, update_scores
 
@@ -100,6 +107,18 @@ def main() -> int:
         return 4
 
     assign_global_indices(pages)
+
+    # Snapshot bookmaker odds for still-open matches before anything else.
+    # Odds only exist pre-kickoff and can't be fetched retroactively, so we
+    # capture them on every run (independent of --dry-run — recording odds is
+    # not submitting a tip). Best-effort: never let this abort the bot run.
+    try:
+        open_with_odds = [m for page in pages for m in editable_matches(page.matches)]
+        captured = record_odds(open_with_odds)
+        if captured:
+            print(f"Captured odds for {captured} open match(es) -> data/odds_history.jsonl")
+    except Exception as e:  # noqa: BLE001 - odds capture must never break the run
+        print(f"Odds snapshot skipped (non-fatal): {e}", file=sys.stderr)
 
     # Kicktipp's tippabgabe page defaults to whichever Spieltag it considers
     # "current" — which only advances once that Spieltag is fully played,
