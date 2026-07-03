@@ -23,8 +23,5 @@ venv/
 *.log
 debug-*.html
 
-# Runtime data (tip history grows every run, not source)
-data/
-
 # macOS
 .DS_Store

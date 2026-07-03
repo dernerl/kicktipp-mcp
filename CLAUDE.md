@@ -4,53 +4,49 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-Kicktipp football-tipping bot with two entry points plus a results dashboard:
-- `mcp_server.py` — FastMCP server (tools: `list_open_matches`, `list_submitted_tips`, `submit_tips`, `get_ranking`).
-- `main.py` — CLI bot run on a schedule via launchd (`run.sh`); strategies in `strategies.py` (`random`, `llm`).
-- `dashboard.py` — local results dashboard (see below).
-- `kicktipp.py` — the HTTP client + all HTML parsing; everything else builds on it.
+Kicktipp MCP server + reusable client, kept aligned with upstream
+[Cloudy261/kicktipp-mcp](https://github.com/Cloudy261/kicktipp-mcp) for future PRs:
+
+- `kicktipp.py` — the HTTP client + all HTML parsing (matches, tips, ranking,
+  past results, odds); everything else builds on it.
+- `mcp_server.py` — FastMCP server (tools: `list_open_matches`,
+  `list_submitted_tips`, `submit_tips`, `get_ranking`).
+- `strategies.py` — tipping strategies (`random`, `llm`).
+
+The automated bot (cron), score/odds tracking, and the results dashboard
+(local + hosted on Vercel) live in a separate repo,
+[dernerl/kicktipp-dashboard](https://github.com/dernerl/kicktipp-dashboard) —
+kept out of this fork so it stays a clean, upstream-alignable diff. See
+`dernerl/kicktipp-dashboard`'s `docs/adr/0009-github-actions-cron-und-vercel-hosting.md`
+for why. `kicktipp.py` and `strategies.py` are vendored (copied) into that
+repo — port fixes made here back there manually; there's no automated sync.
 
 ## Gotchas (Claude will get these wrong otherwise)
 
-- **Non-standard scoring (4/3/2/0).** This community scores **4 = exact, 3 = correct
-  goal difference (non-draw), 2 = correct tendency (incl. a non-exact draw), 0 = wrong** —
-  NOT the standard Kicktipp 3/2/1. `tracking._points` implements this scheme
-  (verified 1:1 against the live cell points in `community_tips.jsonl`). Tip-outcome
-  classification (`dashboard._enrich_tip` `status`, and *Verrückte Tipps*) is done by
-  tip-vs-result, so it's correct regardless of the point values. See ADR 0005.
-- **Bookmaker odds: live forward-capture + retroactive backfill.** Kicktipp shows the
-  ODDSET 1/X/2 odds on the Tippabgabe page for *every* Spieltag, including already-played
-  ones (table `tippabgabeSpiele`). `odds_history.record_odds` upserts open-match odds each
-  run; `odds_history.backfill_odds` pulls the real historical odds for all Spieltage in one
-  pass (`KicktippClient.fetch_all_odds`). Stored in `data/odds_history.jsonl`. (Earlier docs
-  wrongly claimed odds couldn't be backfilled — see ADR 0007.)
-- **`data/` is gitignored and regenerable** — never commit it. The dashboard's inputs
-  are rebuilt by `ranking_history.py` (writes `ranking_history.jsonl`,
-  `ranking_steps.jsonl`, `community_tips.jsonl`); `tips_history.jsonl`/`odds_history.jsonl`
-  grow on each bot run.
-- **Historical standings/tips are reconstructed**, not stored: scraped from each
-  per-Spieltag `tippuebersicht` page (table `id="ranking"`, per-match `<sub class="p">`
-  point cells). The Gesamtübersicht's `spieltagIndex` param is ignored by Kicktipp.
+- **This fork has community-specific history that hasn't been upstreamed.**
+  Not everything here matches `Cloudy261/kicktipp-mcp` 1:1 — check
+  `git log origin/main..HEAD` before assuming a change is generic enough for
+  an upstream PR; some past commits mixed generic fixes with
+  community-specific behaviour (this is exactly why the bot/dashboard were
+  split out into their own repo).
+- **Non-standard scoring exists downstream, not here.** The `kicktipp-dashboard`
+  repo's Tippkreis uses 4/3/2/0 scoring, not the standard Kicktipp 3/2/1 — that
+  logic lives entirely in `tracking.py` over there, not in this repo.
 
 ## Commands
 
 ```bash
-uv run python main.py --strategy random --dry-run    # bot, prints tips, submits nothing
-uv run python ranking_history.py                     # rebuild dashboard data (logs in once)
-uv run python odds_history.py --backfill             # pull real historical odds (all Spieltage)
-uv run python dashboard.py                            # serve dashboard at http://localhost:8765
-uv run python -m py_compile <files>                  # quick sanity check (no test suite)
+uv run python main.py --strategy random --dry-run    # if present locally; see kicktipp-dashboard for the maintained bot
+uv run python -m py_compile *.py                     # quick sanity check (no test suite)
 ```
 
 Credentials live in `.env` (`KICKTIPP_EMAIL`/`PASSWORD`/`COMMUNITY`), gitignored.
 
 ## Conventions
 
-- **No new dependencies.** Stdlib + the existing four (`requests`, `beautifulsoup4`,
-  `python-dotenv`, `mcp`). The dashboard server is stdlib `http.server`; its frontend
-  is one vanilla-JS/SVG file (`web/dashboard.html`), no build step.
-- **Don't touch the tipping/scoring path casually** (`strategies.py` selection,
-  `tracking._points`) — changing scoring rewrites historical comparisons.
-- **Record non-trivial decisions as ADRs** (Nygard format) in `docs/adr/`.
-- There is no automated test suite; verify by running the commands above (dry-run for
-  the bot, headless Chrome or a reload for the dashboard).
+- **No new dependencies.** Stdlib + `requests`, `beautifulsoup4`, `python-dotenv`, `mcp`.
+- **Record non-trivial decisions as ADRs** (Nygard format) — this repo doesn't
+  currently have its own `docs/adr/`; historical decisions about the bot,
+  scoring, and dashboard live in `dernerl/kicktipp-dashboard`'s `docs/adr/`.
+- There is no automated test suite; verify with `py_compile` and by exercising
+  the MCP tools via Claude Desktop.
